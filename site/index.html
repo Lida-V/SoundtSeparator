@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sound Separatorは、音楽や映像の音をAIで分離し、波形編集・修復・保存まで行えるローカルアプリ。Windows向けのソースと導入手順を公開しています。">
+  <meta name="theme-color" content="#08181e">
+  <meta property="og:title" content="Sound Separator — 音を分ける。制作を進める。">
+  <meta property="og:description" content="ローカルAI音源分離と波形編集。ボーカル・伴奏、映像3ステム、音楽6ステム、53カテゴリの楽器探索。">
+  <meta property="og:type" content="website">
+  <title>Sound Separator — ローカルAI音源分離・波形編集</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+  <header class="site-header container">
+    <a class="brand" href="#" aria-label="Sound Separator トップ">
+      <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><path d="M4 13v6m6-12v18m6-22v26m6-20v14m6-10v6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+      <span>Sound<span class="brand-light">Separator</span></span>
+    </a>
+    <nav aria-label="メインナビゲーション">
+      <a class="nav-text" href="#features">できること</a>
+      <a class="nav-text" href="#models">分離モデル</a>
+      <a class="nav-download" href="#setup">はじめる <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> LOCAL AI AUDIO WORKSPACE</p>
+        <h1 id="hero-title">音を分ける。<br><span>制作を進める。</span></h1>
+        <p class="hero-description">歌声も、楽器も、映像の音も。<br>AIによるステム分離から波形編集・修復まで、<br class="desktop-break">手元のPCでつながる音の作業場。</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://github.com/Lida-V/SoundtSeparator/archive/refs/heads/main.zip">ソースをダウンロード <span aria-hidden="true">↓</span></a>
+          <a class="button button-secondary" href="https://github.com/Lida-V/SoundtSeparator">GitHubを見る <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="download-note">Windows 10 / 11 · NVIDIA GPU推奨 · ZIP形式</p>
+      </div>
+
+      <div class="workspace-visual" role="img" aria-label="ひとつの音源がボーカル、ドラム、ベース、その他のトラックに分かれる模式図。実際の分離音声を示すものではありません。">
+        <div class="visual-top"><span class="visual-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>SOUND WORKSPACE</span><span class="visual-local">LOCAL</span></div>
+        <div class="visual-ruler" aria-hidden="true"><span>0:00</span><span>0:05</span><span>0:10</span><span>0:15</span></div>
+        <div class="visual-track track-mix"><span>元音源</span><svg viewBox="0 0 300 44" aria-hidden="true"><path d="M0 22h8l3-9 3 20 4-26 4 30 4-21 4 12 4-17 4 23 4-29 4 34 4-24 4 16 4-22 4 30 4-19 4 10 4-17 4 24 4-31 4 35 4-26 4 18 4-12 4 6h6l4-11 4 24 4-29 4 32 4-21 4 13 4-25 4 30 4-17 4 8 4-12 4 20 4-29 4 34 4-26 4 17 4-11 4 4h9l3-16 4 30 4-36 4 37 4-26 4 18 4-12 4 5h8l4-9 4 18 4-25 4 30 4-23 4 16 4-11 4 4h11"/></svg></div>
+        <div class="split-line"><span></span><b>SEPARATE</b><span></span></div>
+        <div class="visual-track track-vocal"><span>ボーカル</span><svg viewBox="0 0 300 44" aria-hidden="true"><path d="M0 22h17l4-3 4 6 4-14 4 23 4-28 4 31 4-26 4 16 4-12 4 9 4-6 4 4h20l4-7 4 17 4-25 4 31 4-28 4 21 4-16 4 10 4-4h12l4-8 4 21 4-28 4 33 4-26 4 19 4-14 4 7h30l4-4 4 9 4-19 4 27 4-28 4 23 4-17 4 10 4-5h19"/></svg></div>
+        <div class="visual-track track-drum"><span>ドラム</span><svg viewBox="0 0 300 44" aria-hidden="true"><path d="M0 22h8l2-18 2 36 2-27 3 15 3-6h24l2-14 2 28 2-20 3 10 3-4h25l2-18 2 36 2-27 3 15 3-6h24l2-14 2 28 2-20 3 10 3-4h25l2-18 2 36 2-27 3 15 3-6h24l2-14 2 28 2-20 3 10 3-4h25l2-18 2 36 2-27 3 15 3-6h24"/></svg></div>
+        <div class="visual-track track-bass"><span>ベース</span><svg viewBox="0 0 300 44" aria-hidden="true"><path d="M0 22c4-18 8-18 12 0s8 18 12 0 8-18 12 0 8 18 12 0 8-12 12 0 8 12 12 0 8-12 12 0 8 12 12 0 8-18 12 0 8 18 12 0 8-18 12 0 8 18 12 0 8-12 12 0 8 12 12 0 8-12 12 0 8 12 12 0 8-18 12 0 8 18 12 0 8-18 12 0 8 18 12 0 8-12 12 0 8 12 12 0 8-12 12 0 8 12 12 0 8-18 12 0"/></svg></div>
+        <div class="visual-track track-other"><span>その他</span><svg viewBox="0 0 300 44" aria-hidden="true"><path d="M0 22h24l5-3 5 8 5-15 5 18 5-13 5 8 5-3h15l5-9 5 20 5-25 5 28 5-18 5 11 5-7h24l5-5 5 12 5-18 5 21 5-15 5 10 5-5h20l5-10 5 23 5-29 5 31 5-21 5 15 5-9 5 4h17"/></svg></div>
+        <div class="visual-bottom"><span><i aria-hidden="true"></i> 分離 → 確認 → 編集 → 保存</span><span>32bit float WAV</span></div>
+        <p class="visual-caption">機能を示す模式図です。</p>
+      </div>
+    </section>
+
+    <aside class="local-notice container" aria-label="このサイトについて"><span class="notice-icon" aria-hidden="true">↳</span><p><strong>ダウンロードして、あなたのPCで動かすアプリです。</strong><br>このページは紹介・配布用です。AI分離は各自のPCで実行し、このサイトへの音声アップロードは行いません。</p><a href="#setup">導入手順へ <span aria-hidden="true">↓</span></a></aside>
+
+    <section id="features" class="section container" aria-labelledby="features-title">
+      <div class="section-heading"><p class="eyebrow">ONE CONTINUOUS WORKFLOW</p><h2 id="features-title">分けた音を、<br class="mobile-break">そのまま制作へ。</h2><p>欲しい素材を取り出し、残ったノイズを整え、使える形で持ち出す。</p></div>
+      <div class="workflow-grid">
+        <article class="workflow-item"><span class="step-index">01 / SEPARATE</span><div class="feature-symbol symbol-separate" aria-hidden="true">≋</div><h3>目的から分ける</h3><p>ボーカル・伴奏、音楽6ステム、映像の話し声・効果音・BGM。多楽器探索では53カテゴリから必要な楽器を選べます。</p><span class="feature-detail">5〜60秒の区間で試し分離</span></article>
+        <article class="workflow-item"><span class="step-index">02 / REFINE</span><div class="feature-symbol symbol-refine" aria-hidden="true">⌁</div><h3>聴いて、磨く</h3><p>トラックを切り替えて聴き比べ、波形を拡大して編集。クリック・ハム・ノイズ・リバーブへの対処も同じ画面で。</p><span class="feature-detail">同期再生 / ループ / Undo・Redo</span></article>
+        <article class="workflow-item"><span class="step-index">03 / CREATE</span><div class="feature-symbol symbol-create" aria-hidden="true">↗</div><h3>制作へ持ち出す</h3><p>選んだステムをWAV・ZIPで保存。セリフ単位のクリップ・SRT字幕・MIDI書き出しで、次の工程につなげます。</p><span class="feature-detail">32bit float / プロジェクト保存</span></article>
+      </div>
+      <div class="feature-strip"><span><b>4</b>つの分離目的</span><span><b>5</b>つの選択モデル</span><span><b>32</b>bit float保存</span><span class="strip-local">音声処理はあなたのPC内で</span></div>
+    </section>
+
+    <section id="models" class="models-section section" aria-labelledby="models-title"><div class="container">
+      <div class="section-heading model-heading"><div><p class="eyebrow">CHOOSE YOUR MODEL</p><h2 id="models-title">ひとつの正解より、<br>音に合う選択を。</h2></div><p>音源によって混入や欠落の傾向は変わります。<br>短い区間を試し、耳で確かめて選べます。</p></div>
+      <div class="model-list">
+        <article class="model-row"><div class="model-name"><span class="model-category category-video">映像</span><h3>BandIt Plus</h3></div><p>話し声・効果音・BGMの3ステム分離。高品質設定ではCDX23と組み合わせます。</p><span class="model-note">ステレオ</span></article>
+        <article class="model-row"><div class="model-name"><span class="model-category category-video">映像</span><h3>DBS-TIGER-DnR</h3><span class="new-tag">追加</span></div><p>入力に合わせた帯域分割を使う軽量モデル。映像の3分離を試すもうひとつの選択肢。</p><span class="model-note">モノラル出力</span></article>
+        <article class="model-row"><div class="model-name"><span class="model-category category-vocal">歌声</span><h3>BS-RoFormer</h3></div><p>ボーカル・伴奏の2分離。音楽6ステムでは、後段のDemucsと組み合わせます。</p><span class="model-note">ステレオ</span></article>
+        <article class="model-row"><div class="model-name"><span class="model-category category-vocal">歌声</span><h3>MelBand RoFormer</h3><span class="new-tag">追加</span></div><p>メル帯域を使うボーカル分離。BS-RoFormerと切り替えて、素材との相性を確認できます。</p><span class="model-note">ステレオ</span></article>
+        <article class="model-row"><div class="model-name"><span class="model-category category-instrument">楽器</span><h3>MVSep Mega 53</h3><span class="new-tag">追加</span></div><p>弦・管・鍵盤・シンセなど53カテゴリから選択。カテゴリには重複があり、全出力の合計は原曲になりません。</p><span class="model-note">VRAM 16GB以上推奨</span></article>
+      </div>
+      <p class="model-footnote">「53カテゴリ」は分離対象の種類数です。常に53個の独立した音を検出する機能ではありません。ドラム細分化・リード／バック分離などの追加モデルも、必要に応じて利用できます。</p>
+    </div></section>
+
+    <section id="setup" class="section container setup-section" aria-labelledby="setup-title">
+      <div class="section-heading"><p class="eyebrow">YOUR STUDIO, YOUR MACHINE</p><h2 id="setup-title">最初の一歩は、<br class="mobile-break">ダウンロードから。</h2><p>Windows向けのローカルアプリです。準備するものと手順を確認してください。</p></div>
+      <div class="setup-grid">
+        <div class="requirements"><span class="small-label">準備するもの</span><h3>Windows PC<br>＋ ローカル実行環境</h3><dl><div><dt>OS</dt><dd>Windows 10 / 11（64bit）</dd></div><div><dt>GPU</dt><dd>NVIDIA GPU推奨<br><small>VRAM 6GB以上を目安に、モデルごとに確認。Mega 53は16GB以上推奨。</small></dd></div><div><dt>メモリ</dt><dd>16GB以上 / 32GB推奨</dd></div><div><dt>ツール</dt><dd><a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a> と <a href="https://ffmpeg.org/download.html">ffmpeg</a><br><small>インストール後、PATHから使える状態にします。</small></dd></div></dl><p>CPUでも実行できますが、AI処理には時間がかかります。モデル・仮想環境・作業ファイルのため、SSDの空き容量も確保してください。</p></div>
+        <ol class="setup-steps">
+          <li><span class="setup-number">1</span><div><h3>ソースを取得する</h3><p>GitHubのZIPをダウンロードして展開します。</p><a class="inline-link" href="https://github.com/Lida-V/SoundtSeparator/archive/refs/heads/main.zip">ZIPをダウンロード <span aria-hidden="true">↓</span></a></div></li>
+          <li><span class="setup-number">2</span><div><h3>初回セットアップ</h3><p>uvとffmpegを用意したら、フォルダ内の <code>setup.bat</code> を実行。Python環境と必要なパッケージを準備します。</p></div></li>
+          <li><span class="setup-number">3</span><div><h3>起動して、音を追加する</h3><p><code>run.bat</code> を実行すると、PC内のブラウザでアプリが開きます。目的とモデルを選び、音声・動画をドロップします。</p><p class="step-note">AIモデルは初回使用時に配布元から取得します。音声を配布元へ送信する処理はありません。</p></div></li>
+        </ol>
+      </div>
+      <div class="setup-footer"><p>詳細な導入方法・機能の使い方は、READMEにまとめています。</p><a class="button button-secondary" href="https://github.com/Lida-V/SoundtSeparator#readme">導入ガイドを読む <span aria-hidden="true">↗</span></a></div>
+    </section>
+
+    <section class="faq-section section container" aria-labelledby="faq-title"><div><p class="eyebrow">GOOD TO KNOW</p><h2 id="faq-title">はじめる前に。</h2><p class="faq-intro">できることと、確認しておきたいこと。</p></div><div class="faq-list">
+      <details><summary>このサイト上で分離できますか？</summary><p>このサイトはアプリの紹介・ダウンロードページです。AI分離は、ダウンロードしてセットアップした各自のPCで行います。処理画面もブラウザに表示されますが、実行場所はローカルPCです。</p></details>
+      <details><summary>音声や動画は外部に送信されますか？</summary><p>本アプリの分離・編集はローカルで行い、音声・動画をクラウドへ送信しません。セットアップとモデルの初回取得にはインターネット接続が必要です。この紹介ページにもファイルのアップロード機能はありません。</p></details>
+      <details><summary>どんなファイルを読み込めますか？</summary><p>WAV・MP3・FLAC・M4Aなどの音声と、MP4・MKVなどの動画に対応します。動画からはffmpegで音声を抽出します。保存した <code>.ssproj</code> を読み込むと編集を再開できます。</p></details>
+      <details><summary>分離すれば、完全に元の楽器音になりますか？</summary><p>音源によって他の音の混入、欲しい音の欠落、音色や余韻の変化が残ります。短い区間で比較し、音の始まりや語尾も確認してください。Mega 53のカテゴリには重複があるため、全トラックを足して原曲を再現する用途には使いません。</p></details>
+      <details><summary>文章で指定した効果音を取り出せますか？</summary><p>今回のアプリにはSAM Audioを搭載していません。利用にはモデル配布元の承認や別の実行環境の検証が必要です。実装済みの分離方式は、このページのモデル一覧で確認できます。</p></details>
+      <details><summary>モデルや分離素材を商用利用できますか？</summary><p>使用するモデルの配布条件と、元の音源の権利を個別に確認してください。アプリの公開は、すべてのモデルや分離結果の商用利用を一律に許可するものではありません。モデルの出典とライセンスに関する情報はREADMEに記載しています。</p></details>
+    </div></section>
+
+    <section class="closing container" aria-labelledby="closing-title"><p class="eyebrow">MAKE ROOM FOR YOUR NEXT IDEA</p><h2 id="closing-title">必要な音から、<br class="mobile-break">次の制作へ。</h2><p>Sound Separatorを、あなたのPCに。</p><a class="button button-primary" href="https://github.com/Lida-V/SoundtSeparator/archive/refs/heads/main.zip">ソースをダウンロード <span aria-hidden="true">↓</span></a></section>
+  </main>
+
+  <footer class="site-footer container"><div><a class="brand footer-brand" href="#">Sound<span class="brand-light">Separator</span></a><p>ローカルAI音源分離・波形編集 / Lida</p></div><div class="footer-links"><a href="https://github.com/Lida-V/SoundtSeparator">GitHub</a><a href="https://github.com/Lida-V/SoundtSeparator/blob/main/docs/updates-2026-10.md">更新・検証記録</a><a href="https://github.com/Lida-V/SoundtSeparator#使用モデル">モデル・出典</a></div><p class="footer-date">2026.10 UPDATE</p></footer>
+</body>
+</html>

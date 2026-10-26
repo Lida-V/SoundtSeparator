@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sound Separator — 音源分離</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎛️</text></svg>">
+</head>
+<body>
+<div class="bg-glow glow-1"></div>
+<div class="bg-glow glow-2"></div>
+<div class="bg-glow glow-3"></div>
+
+<header>
+  <div class="header-brand"><h1><span class="logo-icon">🎛️</span> Sound <span class="grad">Separator</span></h1>
+    <p class="subtitle">音を分ける。必要な音を、磨く。</p></div>
+  <span class="local-badge"><span></span> LOCAL AUDIO STUDIO</span>
+</header>
+
+<main>
+  <!-- アップロード画面 -->
+  <section id="upload-view" class="card">
+    <div class="studio-intro">
+      <div><p class="eyebrow">SEPARATION WORKSPACE</p><h2>取り出したい音から、選ぶ。</h2>
+      <p class="intro-copy">分離から試聴・編集・書き出しまで、このPCで。</p></div>
+      <div class="runtime-panel" aria-live="polite">
+        <div id="runtime-status">実行環境を確認中…</div>
+        <div class="runtime-actions"><span id="runtime-memory"></span><button id="release-models" class="text-button" disabled>モデルメモリを解放</button></div>
+      </div>
+    </div>
+    <div class="section-label"><span>01</span><h3>分離の目的</h3></div>
+    <div class="mode-row" id="mode-options" role="group" aria-label="分離の目的">
+      <label class="mode-card"><input type="radio" name="mode" value="dme" checked><div class="mode-body"><div class="mode-title">🎬 映像・動画音声</div><div class="mode-desc">話し声 / 効果音 / BGM</div></div></label>
+      <label class="mode-card"><input type="radio" name="mode" value="music"><div class="mode-body"><div class="mode-title">🎸 音楽・6ステム</div><div class="mode-desc">ボーカルと5種類の楽器</div></div></label>
+    </div>
+    <div class="section-label"><span>02</span><h3>モデルと処理設定</h3><span id="catalog-status" class="catalog-status" role="status">モデルを確認中…</span></div>
+    <div id="model-options" class="model-options" role="group" aria-label="分離モデル"></div>
+    <div id="model-detail" class="model-detail" aria-live="polite"></div>
+    <div id="stem-selector" class="stem-selector hidden">
+      <div class="stem-selector-head"><b>取り出す楽器</b><span id="stem-count"></span><button id="stems-all" class="text-button">すべて選択</button><button id="stems-clear" class="text-button">選択を解除</button></div>
+      <input id="stem-search" class="studio-input" type="search" placeholder="楽器名で絞り込み" aria-label="楽器名で絞り込み">
+      <div id="stem-options" class="stem-options"></div>
+      <p class="settings-note">必要な楽器だけを選ぶと、結果の読み込みと編集が軽くなります。</p>
+    </div>
+    <div class="quality-row settings-row">
+      <span class="quality-label">処理の丁寧さ</span>
+      <div class="quality-options">
+        <label><input type="radio" name="quality" value="fast"><span>高速<small>試し聴き</small></span></label>
+        <label><input type="radio" name="quality" value="standard" checked><span>標準</span></label>
+        <label><input type="radio" name="quality" value="high"><span>高品質<small>(数倍時間)</small></span></label>
+      </div>
+    </div>
+    <div class="preview-settings">
+      <label class="preview-toggle"><input id="preview-enabled" type="checkbox"><span>短い区間で試す</span><small>全編の前にモデルの相性を確認</small></label>
+      <div id="preview-fields" class="preview-fields hidden">
+        <label>開始 <input id="preview-start" type="number" min="0" step="0.1" value="0" inputmode="decimal"> 秒</label>
+        <label>長さ <input id="preview-duration" type="number" min="5" max="60" step="1" value="15" inputmode="decimal"> 秒</label>
+        <span>出力は指定区間のみ。エディタでは0秒から表示します。</span>
+      </div>
+    </div>
+    <div class="section-label"><span>03</span><h3>ファイルを追加して分離</h3></div>
+    <div id="dropzone" role="button" tabindex="0" aria-label="音声・動画ファイルを選択して分離">
+      <div class="dz-icon">↥</div>
+      <div><p class="dz-main">音声・動画をここにドロップ</p>
+      <p class="dz-sub">または <button id="browse-btn" class="link-btn">ファイルを選択</button><span class="dz-multi">複数ファイルの一括分離にも対応</span></p>
+      <p class="dz-formats">WAV / MP3 / FLAC / M4A / MP4 / MKV など · .ssproj で編集を再開</p></div>
+      <input type="file" id="file-input" accept="audio/*,video/*,.ssproj" multiple hidden>
+    </div>
+    <p class="privacy-note">音声はこのPC内で処理します。モデル未取得時のみ、配布元からダウンロードします。</p>
+    <details class="technology-note"><summary>文章で音を指定する SAM Audio について</summary><p>特定の効果音や環境音を文章で指定して抽出できる技術です。利用には配布元での手続きと専用環境の準備が必要です。<a href="https://github.com/facebookresearch/sam-audio" target="_blank" rel="noopener noreferrer">公式の導入案内 ↗</a></p></details>
+    <div id="recent-jobs" class="recent-jobs hidden"><div class="section-label"><h3>このブラウザの分離履歴</h3><button id="clear-history" class="text-button">一覧を消す</button></div><p class="settings-note">同じタブで実行した直近8件。サーバーを終了すると結果を開けなくなります。</p><div id="recent-list"></div></div>
+  </section>
+
+  <!-- 一括分離画面 -->
+  <section id="batch-view" class="card hidden">
+    <b>📦 一括分離</b> — 複数ファイルを順番に分離し、それぞれZIPでダウンロードできます
+    <div id="batch-list"></div>
+    <div class="panel-row">
+      <button id="batch-back" class="btn">＋ 最初の画面に戻る</button>
+    </div>
+  </section>
+
+  <!-- 処理中画面 -->
+  <section id="progress-view" class="card hidden">
+    <div class="progress-info">
+      <div class="spinner"></div>
+      <div>
+        <p id="progress-filename" class="progress-filename"></p>
+        <p id="progress-message" class="progress-message">準備中...</p>
+      </div>
+      <span id="progress-percent" class="progress-percent">0%</span>
+    </div>
+    <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+    <p id="progress-settings" class="settings-note"></p>
+  </section>
+
+  <!-- 結果画面 -->
+  <section id="result-view" class="hidden">
+    <div class="card transport-card">
+      <div id="result-meta" class="result-meta hidden"></div>
+      <div class="transport">
+        <button id="play-btn" class="play-btn" title="再生/停止 (Space)">▶</button>
+        <button id="loop-btn" class="btn loop-btn" title="選択範囲をループ再生 (L) — 修復パラメータの聴き比べに便利">🔁</button>
+        <div class="time-display"><span id="time-current">0:00.0</span><span class="time-sep">/</span><span id="time-total">0:00.0</span></div>
+        <div class="master-meter-wrap" title="マスター出力レベル — 全トラック合計。CLIPが点いたら音割れしています (各トラックの音量を下げてください)">
+          <span class="mm-label">OUT</span>
+          <div class="track-meter master-meter"><div class="meter-mask" id="master-meter-mask"></div><span class="meter-clip" id="master-clip">CLIP</span></div>
+        </div>
+        <div class="transport-right">
+          <span id="result-filename" class="result-filename"></span>
+          <button id="save-proj-btn" class="btn" title="編集状態をプロジェクトファイル (.ssproj) に保存。後でドロップすると続きから再開できます">💾 保存</button>
+          <label class="export-format-label">WAV <select id="export-format" aria-label="WAV書き出し形式" title="32bit floatは分離音をクリップせず保存。16bit PCMは音量が±1を超える部分をクリップします。"><option value="float32" selected>32bit float</option><option value="pcm16">16bit PCM</option></select></label>
+          <button id="zip-btn" class="btn btn-primary">⬇ 選択ステム保存</button>
+          <button id="new-btn" class="btn">＋ 新しいファイル</button>
+        </div>
+      </div>
+      <!-- 編集ツールバー -->
+      <div class="toolbar">
+        <div class="tool-group tg-edit" data-label="編集 (範囲を選択してから)">
+          <button id="tool-cut" class="tool-btn" title="選択したトラックから切り取る(その場は無音に)。他のトラックには影響しません (Ctrl+X)">✂ カット</button>
+          <button id="tool-copy" class="tool-btn" title="選択したトラックの範囲をコピー (Ctrl+C)">⧉ コピー</button>
+          <button id="tool-paste" class="tool-btn" title="クリックで選んだトラックへ、元と同じ時間位置にミックス貼り付け (Ctrl+V)">⇥ 貼り付け</button>
+          <select id="tool-move" class="tool-btn" title="選択範囲を別のトラックへ移動 (同じ時間位置)">
+            <option value="">➜ 移動先…</option>
+          </select>
+          <button id="tool-silence" class="tool-btn" title="いらない音をその場で消す(無音化)。尺もクリップボードも変わりません (Delete)">🧹 除去</button>
+          <button id="tool-ripple" class="tool-btn" title="選択範囲を全トラックから削除して前後を詰める・尺が縮みます (Shift+Delete)">⌦ 詰め削除</button>
+          <button id="tool-deselect" class="tool-btn" title="選択解除 (Esc)">✕</button>
+        </div>
+        <div class="tool-group tg-repair" data-label="修復・整音">
+          <button id="tool-silence-cut" class="tool-btn" title="無音区間を自動検出して削除">✁ 無音カット</button>
+          <button id="tool-denoise" class="tool-btn" title="選択範囲をノイズとして学習し全体から除去">〜 ノイズ除去</button>
+          <button id="tool-repair" class="tool-btn" title="選択範囲の修復・エフェクト (クリック除去 / リバーブ除去 / ハム除去 / フェード / ノーマライズ)">🔧 修復</button>
+        </div>
+        <div class="tool-group tg-export" data-label="書き出し">
+          <button id="tool-dialogue" class="tool-btn" title="文字起こしして、セリフ単位の連番WAV・SRT字幕・TTS学習用データを書き出します">📝 セリフ書き出し</button>
+          <button id="tool-midi" class="tool-btn" title="トラックをAI採譜してMIDIファイルに変換します (メロディ・単音〜和音楽器向き)">🎹 MIDI</button>
+        </div>
+        <div class="tool-group tg-track" data-label="トラック・履歴">
+          <button id="tool-addtrack" class="tool-btn" title="無音の新規トラックを追加 (移動・貼り付け先として使えます)">＋ トラック</button>
+          <button id="tool-undo" class="tool-btn" title="元に戻す (Ctrl+Z)">↶ 戻す</button>
+          <button id="tool-redo" class="tool-btn" title="やり直し (Ctrl+Y)">↷</button>
+        </div>
+        <div class="tool-group tg-view" data-label="表示">
+          <button id="tool-zoom-out" class="tool-btn" title="縮小 (-)  ／ 波形上で Ctrl+ホイールでもズームできます">🔍−</button>
+          <button id="tool-zoom-in" class="tool-btn" title="拡大 (+) ／ 波形上で Ctrl+ホイールでもズームできます">🔍＋</button>
+          <button id="tool-zoom-sel" class="tool-btn" title="選択範囲へズーム (Z)">🔍選択</button>
+          <button id="tool-zoom-full" class="tool-btn" title="全体表示 (0)">全体</button>
+          <button id="tool-autoscale" class="tool-btn" title="小さい音のトラックも波形が見えるよう表示だけ拡大します (実際の音量は変わりません)">📈 自動スケール</button>
+          <button id="tool-specview" class="tool-btn" title="波形⇔スペクトログラム表示の切替。ハム・ヒス・クリックなどのノイズはスペクトログラムの方が見つけやすい (縦=周波数、明るさ=音量)">🌈 スペクトル</button>
+        </div>
+        <div class="tool-group tg-help" data-label="ヘルプ">
+          <button id="tool-guide" class="tool-btn" title="用途別の整音手順ガイド">📖 整音ガイド</button>
+        </div>
+        <span id="selection-info" class="selection-info"></span>
+      </div>
+      <!-- 無音カット設定パネル -->
+      <div id="panel-silence-cut" class="panel hidden">
+        <b>無音カット</b> — しきい値より小さい音が続く区間を全トラックから削除します
+        <div class="panel-row">
+          <label>しきい値 <input type="number" id="sc-threshold" value="-45" step="1" max="0" min="-90"> dB</label>
+          <label>最小無音長 <input type="number" id="sc-minlen" value="0.5" step="0.1" min="0.1"> 秒</label>
+          <label>前後に残す <input type="number" id="sc-pad" value="0.1" step="0.05" min="0"> 秒</label>
+          <button id="sc-run" class="btn btn-primary">実行</button>
+          <button class="btn panel-close">閉じる</button>
+        </div>
+      </div>
+      <!-- 整音ガイドパネル -->
+      <div id="panel-guide" class="panel panel-help hidden">
+        <b>📖 整音ガイド — 用途別のおすすめ手順</b>
+        <div class="guide-recipes">
+          <div class="recipe">
+            <div class="recipe-title">🎬 動画のセリフをきれいにする</div>
+            <ol>
+              <li>「話し声」の <b>S</b>(ソロ) で分離結果を確認</li>
+              <li><button class="link-btn guide-open" data-panel="panel-silence-cut">✁ 無音カット</button> で間延びを削除</li>
+              <li>ノイズが乗っていれば、ノイズだけの区間を選択 → <button class="link-btn guide-open" data-panel="panel-denoise">〜 ノイズ除去</button></li>
+              <li>「プツッ」音は範囲選択 → <button class="link-btn guide-open" data-panel="panel-repair">🔧 修復</button> のクリック除去</li>
+              <li>最後に 🔧修復 → ラウドネスノーマライズ (YouTubeなら -14 LUFS)</li>
+            </ol>
+          </div>
+          <div class="recipe">
+            <div class="recipe-title">🎤 TTS / RVC の学習素材を作る</div>
+            <ol>
+              <li>映像モードで分離し「話し声」を使う (音楽ならボーカル)</li>
+              <li>範囲選択 → <button class="link-btn guide-open" data-panel="panel-repair">🔧 修復</button> のリバーブ除去で響きを取る (乾いた声が理想)</li>
+              <li>ノイズだけの区間を選択 → <button class="link-btn guide-open" data-panel="panel-denoise">〜 ノイズ除去</button></li>
+              <li><button class="link-btn guide-open" data-panel="panel-dialogue">📝 セリフ書き出し</button> で「長さを自動調整 2〜10秒」で解析</li>
+              <li>一覧で誤認識を修正して書き出し → clips/ と metadata.csv を学習に使用</li>
+            </ol>
+          </div>
+          <div class="recipe recipe-wide">
+            <div class="recipe-title">🔇 ノイズの見分け方と対処 — 波形・症状からツールとパラメータを選ぶ</div>
+            <table class="noise-table">
+              <tr><th>聴こえ方</th><th>波形での見え方</th><th>使うツール</th><th>パラメータの目安</th></tr>
+              <tr>
+                <td>「サーッ」が常に鳴る<br>(ヒスノイズ・環境ノイズ)</td>
+                <td>無音のはずの場所にも<b>薄い毛羽</b>が全体に走る</td>
+                <td>〜 ノイズ除去<br>(プロファイル型)</td>
+                <td>ノイズ<b>だけ</b>の区間を<b>0.5秒以上</b>選択して実行。まず強さ<b>90%</b>。声がこもる・水中のような音になったら<b>70%</b>に下げる</td>
+              </tr>
+              <tr>
+                <td>「ブーン」と低い唸り<br>(電源ハム)</td>
+                <td>波形ではほぼ見えない。<br>🔍ズームすると細かい規則的なうねり</td>
+                <td>🔧 修復 →<br>ハムノイズ除去</td>
+                <td>東日本=<b>50Hz</b> / 西日本=<b>60Hz</b>。効かなければもう一方を試す。適用量100%でOK</td>
+              </tr>
+              <tr>
+                <td>「プツッ」「パチッ」<br>(クリック・リップノイズ)</td>
+                <td>🔍ズーム+📈自動スケールで見ると<b>鋭い縦のトゲ</b>が1本〜数本</td>
+                <td>🔧 修復 →<br>クリック / リップノイズ除去</td>
+                <td>トゲの周辺だけを狭く選択し、まず感度<b>50%</b>。残るなら<b>70〜80%</b>。タ行・カ行の子音が消えたら感度を下げる</td>
+              </tr>
+              <tr>
+                <td>お風呂場のような響き<br>(リバーブ・反響)</td>
+                <td>発話の後に<b>尾を引く</b>ように波形が減衰する</td>
+                <td>🔧 修復 →<br>リバーブ除去 (AI)</td>
+                <td>まず適用量<b>100%</b>。声が痩せたら<b>60〜80%</b>でブレンド。TTS/RVC素材にはかけるのが基本</td>
+              </tr>
+              <tr>
+                <td>音量がバラバラ / 小さい</td>
+                <td>波形の高さが場所・トラックでまちまち</td>
+                <td>🔧 修復 →<br>ラウドネスノーマライズ</td>
+                <td>配信先のプリセットを選ぶだけ (YouTube=-14 LUFS)。素材整えなら-16〜-18が無難</td>
+              </tr>
+              <tr>
+                <td>別の音の混入<br>(BGMやSEが声に残る)</td>
+                <td>本来ないはずの音が重なって見える</td>
+                <td>✂ 編集 →<br>➜ 移動 / 🧹除去</td>
+                <td>混入部分を選択して正しいトラックへ<b>➜移動</b>。分離モード(映像/音楽)や品質を上げて再分離も有効</td>
+              </tr>
+            </table>
+            <p class="rp-note">💡 探し方のコツ: <b>S</b>(ソロ)で対象トラックだけを聴きながら、📈自動スケール+🔍ズーム(Ctrl+ホイール)で波形を確認 → 狭い範囲で試して Ctrl+Z で聴き比べ → 良ければ広い範囲に適用</p>
+          </div>
+          <div class="recipe">
+            <div class="recipe-title">🎵 ボーカル抜き / BGM抜き音源を作る</div>
+            <ol>
+              <li>音楽モードで分離</li>
+              <li>要らないトラック (例: ボーカル) を <b>M</b> でミュート…ではなく、💾チェックを外す</li>
+              <li>必要なステムだけ💾チェック →「⬇ 選択ステム保存」</li>
+              <li>合わせて聴きたい場合は M/S と音量スライダでバランス確認</li>
+            </ol>
+          </div>
+        </div>
+        <div class="panel-row"><button class="btn panel-close">閉じる</button></div>
+      </div>
+      <!-- MIDI書き出しパネル -->
+      <div id="panel-midi" class="panel panel-export hidden">
+        <b>🎹 MIDI書き出し</b> — トラックをAIで採譜し、MIDIファイル (.mid) に変換します（編集内容が反映されます）
+        <div class="panel-row">
+          <label>対象トラック <select id="md-track"></select></label>
+          <label title="低いほど多くの音を拾います (誤検出も増えます)">感度 <input type="range" id="md-sens" min="0.2" max="0.8" step="0.05" value="0.5"> <span id="md-sens-val">標準</span></label>
+          <label>最短ノート <input type="number" id="md-minnote" value="120" step="10" min="30" max="500"> ms</label>
+          <button id="md-run" class="btn btn-primary">実行</button>
+          <button class="btn panel-close">閉じる</button>
+        </div>
+        <p class="rp-note">ピアノ・ギター・ベース・ボーカルのメロディ採譜に向いています。ドラムや複雑なミックスには不向きです (先に🔬追加分離やステム分離で単一楽器にしてから実行してください)。テンポは120固定で書き出されます</p>
+      </div>
+      <!-- トラック追加分離パネル -->
+      <div id="panel-subsep" class="panel hidden">
+        <b>🔬 トラックをさらに分離</b> — <span id="ss-track-label"></span> を専用AIモデルで細分化し、新しいトラックとして追加します
+        <div class="panel-row">
+          <label>種類
+            <select id="ss-kind">
+              <option value="drums">ドラム細分化 (キック / スネア / タム / シンバル)</option>
+              <option value="vocals">ボーカル分離 (リード / バックコーラス)</option>
+            </select>
+          </label>
+          <button id="ss-run" class="btn btn-primary">実行</button>
+          <button class="btn panel-close">閉じる</button>
+        </div>
+        <p id="ss-note" class="rp-note">ドラム系のトラックに使ってください。元のトラックは残ります (ミュートされます)。初回はモデルのダウンロードがあります (ドラム: 約170MB / ボーカル: 約900MB)</p>
+      </div>
+      <!-- セリフ書き出しパネル -->
+      <div id="panel-dialogue" class="panel panel-export hidden">
+        <b>セリフ書き出し</b> — ① 解析 → ② 一覧で確認・調整 → ③ 書き出し（編集内容が反映されます）
+        <div class="panel-row">
+          <label>対象トラック <select id="dg-track"></select></label>
+          <label>精度
+            <select id="dg-model">
+              <option value="small">小 (速い)</option>
+              <option value="medium" selected>中 (バランス)</option>
+              <option value="large">大 (最高精度・初回約3GB DL)</option>
+            </select>
+          </label>
+          <label>言語
+            <select id="dg-lang">
+              <option value="">自動判定</option>
+              <option value="ja">日本語</option>
+              <option value="en">英語</option>
+            </select>
+          </label>
+        </div>
+        <div class="panel-row">
+          <label title="文の区切り・無音を優先しつつ、1クリップがこの範囲に収まるよう自動で結合・分割します"><input type="checkbox" id="dg-adjust" checked> 長さを自動調整</label>
+          <label>最小 <input type="number" id="dg-min" value="2.0" step="0.5" min="0.3" max="30"> 秒</label>
+          <label>最大 <input type="number" id="dg-max" value="10.0" step="0.5" min="1" max="60"> 秒</label>
+          <label title="声の特徴からセリフごとに話者を推定し、話者別フォルダで書き出します"><input type="checkbox" id="dg-diarize"> 話者分離</label>
+          <label id="dg-spk-row" class="hidden">話者数
+            <select id="dg-spknum">
+              <option value="0">自動</option>
+              <option value="2">2人</option>
+              <option value="3">3人</option>
+              <option value="4">4人</option>
+              <option value="5">5人</option>
+              <option value="6">6人</option>
+            </select>
+          </label>
+          <span class="rp-note">TTSは2〜10秒、RVCは3〜10秒程度が定番です</span>
+          <button id="dg-run" class="btn btn-primary">🔎 ① 解析</button>
+          <button class="btn panel-close">閉じる</button>
+        </div>
+        <div id="dg-result" class="hidden">
+          <div class="panel-row">
+            <span id="dg-summary" class="rp-note"></span>
+          </div>
+          <div id="dg-segments"></div>
+          <p class="rp-note">時刻・テキストは直接編集できます ／ ▶で再生位置ジャンプ ／ ✕で除外 ／ 長さが範囲外の行は⚠色で表示</p>
+          <div class="panel-row">
+            <label><input type="checkbox" id="dg-clips" checked> 連番WAVクリップ</label>
+            <label><input type="checkbox" id="dg-mono" checked> モノラル化 (TTS/RVC向け)</label>
+            <label><input type="checkbox" id="dg-srt" checked> SRT字幕</label>
+            <label><input type="checkbox" id="dg-tts" checked> TTS用 metadata.csv</label>
+            <button id="dg-export" class="btn btn-primary">⬇ ② 書き出し (ZIP)</button>
+          </div>
+        </div>
+      </div>
+      <!-- 修復・エフェクトパネル -->
+      <div id="panel-repair" class="panel hidden">
+        <b>修復・エフェクト</b> — 範囲を選択し、対象トラック（ドラッグしたトラック）に適用します
+        <div class="panel-row">
+          <label>種類
+            <select id="rp-effect">
+              <option value="declick">クリック / リップノイズ除去</option>
+              <option value="dereverb">リバーブ除去 (AIモデル)</option>
+              <option value="dehum">ハムノイズ除去 (電源ノイズ)</option>
+              <option value="fadein">フェードイン</option>
+              <option value="fadeout">フェードアウト</option>
+              <option value="normalize">ピークノーマライズ (-1dB)</option>
+              <option value="loudnorm">ラウドネスノーマライズ (配信用)</option>
+              <option value="pitchshift">ピッチ変更 (トラック全体)</option>
+              <option value="tempo">テンポ変更 (全トラック連動)</option>
+            </select>
+          </label>
+          <label id="rp-pitch-row" class="hidden">半音 <input type="number" id="rp-pitch" value="0" step="0.5" min="-12" max="12"></label>
+          <label id="rp-tempo-row" class="hidden">速度 <input type="number" id="rp-tempo" value="100" step="5" min="50" max="200"> %</label>
+          <label id="rp-platform-row" class="hidden">プラットフォーム
+            <select id="rp-platform">
+              <option value="-14">YouTube (-14 LUFS)</option>
+              <option value="-14">Spotify (-14 LUFS)</option>
+              <option value="-16">Apple Music (-16 LUFS)</option>
+              <option value="-14">TikTok / Reels (-14 LUFS)</option>
+              <option value="-16">Podcast (-16 LUFS)</option>
+              <option value="-24">テレビ放送 日本 (-24 LKFS)</option>
+              <option value="custom">カスタム...</option>
+            </select>
+          </label>
+          <label id="rp-lufs-row" class="hidden">目標 <input type="number" id="rp-lufs" value="-14" step="0.5" min="-36" max="-5"> LUFS</label>
+          <label id="rp-sens-row">感度 <input type="range" id="rp-sensitivity" min="0.1" max="1" step="0.05" value="0.5"> <span id="rp-sens-val">50%</span></label>
+          <label id="rp-hum-row" class="hidden">電源周波数
+            <select id="rp-humfreq">
+              <option value="50">50 Hz (東日本)</option>
+              <option value="60">60 Hz (西日本)</option>
+            </select>
+          </label>
+          <label id="rp-mix-row">適用量 <input type="range" id="rp-mix" min="0.2" max="1" step="0.05" value="1"> <span id="rp-mix-val">100%</span></label>
+          <button id="rp-run" class="btn btn-primary">実行</button>
+          <button class="btn panel-close">閉じる</button>
+        </div>
+        <p id="rp-note" class="rp-note">短いインパルス性ノイズ (マウスクリック音・リップノイズ・プチ音) を検出して補間します</p>
+      </div>
+      <!-- ノイズ除去設定パネル -->
+      <div id="panel-denoise" class="panel hidden">
+        <b>ノイズ除去</b> — ノイズだけが鳴っている区間を選択してから実行してください。その区間をプロファイルとして学習し、トラック全体から除去します
+        <div class="panel-row">
+          <label>強さ <input type="range" id="dn-strength" min="0.2" max="1" step="0.05" value="0.9"> <span id="dn-strength-val">90%</span></label>
+          <label>対象
+            <select id="dn-scope">
+              <option value="active">選択したトラック</option>
+              <option value="all">全トラック</option>
+            </select>
+          </label>
+          <button id="dn-run" class="btn btn-primary">実行</button>
+          <button class="btn panel-close">閉じる</button>
+        </div>
+      </div>
+    </div>
+    <div id="guide-card" class="card guide-card hidden">
+      <b>💡 はじめての方へ — 基本の流れ</b>
+      <ol>
+        <li>波形を<b>横にドラッグ</b>して範囲を選択します（ドラッグしたトラックが編集対象になります）</li>
+        <li>ツールバーで <b>✂ カット</b>・<b>➜ 移動</b>・<b>🧹 除去</b>・<b>🔧 修復</b> など。間違えても <b>Ctrl+Z</b> で戻せます</li>
+        <li>各トラックの <b>💾</b> にチェックを付けて「<b>⬇ 選択ステム保存</b>」でダウンロード</li>
+      </ol>
+      <button id="guide-close" class="btn btn-primary">わかりました</button>
+    </div>
+    <div id="overview" title="全体ビュー — クリック/ドラッグで表示位置を移動">
+      <div id="overview-window"></div>
+      <div id="overview-playhead"></div>
+    </div>
+    <div id="tracks"></div>
+    <p class="hint">
+      ドラッグで範囲選択（ドラッグしたトラックが編集対象） ／ クリックでシーク＋対象切替 ／ <b>M</b>=ミュート <b>S</b>=ソロ ／ Space=再生 Ctrl+Z=取り消し<br>
+      🔍 <b>Ctrl+ホイール</b>=カーソル位置へズーム ／ ホイール=横スクロール ／ <b>Z</b>=選択範囲へズーム <b>+/−</b>=拡大縮小 <b>0</b>=全体 ／ 上の細いバーで全体位置を移動<br>
+      💡 分類ミスの修正: 間違ったステムの音を範囲選択 →「➜ 移動先…」で正しいトラックへ（同じ時間位置のまま移動します）
+    </p>
+  </section>
+
+  <div id="error-box" class="error hidden" role="alert"><span id="error-message"></span><button id="retry-job" class="btn hidden">同じファイルでもう一度</button></div>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+
+<footer>Sound Separator · ローカルAI分離 + 波形編集スタジオ</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

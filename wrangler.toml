@@ -1,0 +1,4 @@
+# 紹介・ダウンロードページのみを公開。Python/GPU処理は各利用者のPCで実行。
+name = "sound-separator"
+pages_build_output_dir = "./site"
+compatibility_date = "2026-10-26"

@@ -1,0 +1,32 @@
+# Python
+.venv/
+.cache/
+# 個人ワークスペースの運用ルール（公開対象外）
+/AGENTS.md
+# Cloudflare/ローカル認証と生成物
+.wrangler/
+node_modules/
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+__pycache__/
+*.pyc
+
+# モデルチェックポイント (初回起動時に自動ダウンロード)
+models/*.ckpt
+models/*.chpt
+models/*.th
+models/*.partial
+models/*.safetensors
+
+# 分離結果・一時ファイル
+output/
+*.wav
+*.zip
+*.ssproj
+
+# OS
+Thumbs.db
+.DS_Store

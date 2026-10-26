@@ -1,0 +1,4 @@
+# cmd.exe は CRLF 前提。GitHub ZIPにもCRLFが入るよう実バイトを保持する。
+*.bat -text
+# 公式DBS設定はSHA-256検証するため、WindowsのcloneでもLFを維持する。
+models/dbs_tiger_dnr_config.json text eol=lf

@@ -1,0 +1,48 @@
+{
+  "dechunker_refine_kernel_size": 3,
+  "dechunker_refine_layers": 1,
+  "energy_feature_mode": "mean_peak_std",
+  "in_channels": 256,
+  "normalize_ratio_loss": true,
+  "num_blocks": 8,
+  "num_sources": 3,
+  "out_channels": 132,
+  "ratio_loss_mode": "density",
+  "region_configs": [
+    {
+      "end": 40,
+      "max_chunks": 32,
+      "start": 0,
+      "target_ratio": 1.25,
+      "use_energy": true
+    },
+    {
+      "end": 80,
+      "max_chunks": 32,
+      "start": 40,
+      "target_ratio": 1.25,
+      "use_energy": true
+    },
+    {
+      "end": 352,
+      "max_chunks": 32,
+      "start": 80,
+      "target_ratio": 8.5,
+      "use_energy": false
+    },
+    {
+      "end": 1025,
+      "max_chunks": 32,
+      "start": 352,
+      "target_ratio": 21.03125,
+      "use_energy": false
+    }
+  ],
+  "sample_rate": 44100,
+  "ste_start_epoch": 30,
+  "stride": 512,
+  "upsampling_depth": 5,
+  "use_fla": false,
+  "use_mixture_context": false,
+  "win": 2048
+}
