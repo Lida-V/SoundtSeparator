@@ -86,7 +86,7 @@ function renderModelDetails() {
   if (!model) return;
   const facts = uiElement("div", "model-facts");
   if (model.download_mb) facts.append(uiElement("span", "", `取得容量 約${model.download_mb >= 1000 ? (model.download_mb / 1000).toFixed(1) + " GB" : model.download_mb + " MB"}`));
-  if (model.vram_gb) facts.append(uiElement("span", "", `VRAM目安 ${model.vram_gb} GB以上`));
+  if (model.vram_gb && !model.gpu_guidance) facts.append(uiElement("span", "", `VRAM目安 ${model.vram_gb} GB以上`));
   facts.append(uiElement("span", "", model.cached ? "メモリに読み込み済み" : "使用時に読み込み"));
   if (model.source_url && /^https?:\/\//.test(model.source_url)) {
     const link = uiElement("a", "model-source", "配布元 ↗");
@@ -94,6 +94,7 @@ function renderModelDetails() {
     facts.append(link);
   }
   detail.append(facts);
+  if (model.gpu_guidance) detail.append(uiElement("p", "settings-note", model.gpu_guidance));
   if (model.gpu_reference) {
     const note = model.gpu_reference.includes("旧案内") ? "旧案内は保証値ではありません。" : "";
     const measurement = model.gpu_reference.includes("実測") ? "実測は特定条件のPyTorch使用量です。" : "";

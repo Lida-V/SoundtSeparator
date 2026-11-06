@@ -72,45 +72,58 @@ RE-USEの聴感品質と、話者分離の正解データに対する精度は�
 
 ## 動作環境
 
-| 項目 | 案内 |
+**GPUを選ぶときの出発点は、VRAM 8 GB以上のNVIDIA GPUです。** 歌声分離や音楽6ステムなどを試すための暫定的な目安です。Mega 53を使う場合は、配布元が推奨する**VRAM 16 GB以上**を選んでください。いずれも全モデル・設定での動作保証ではありません。
+
+| 項目 | 必要・推奨環境 |
 |---|---|
-| OS | Windows 10/11 64bit向け。下表の検証例はWindows環境での結果です |
-| GPU | NVIDIA CUDA対応GPUを利用可能。必要VRAMはモデル・設定・音源長によって異なります |
-| RAM | モデルごとの最小・推奨容量は未検証。音源長や同時に開くアプリによって変わります |
-| ディスク | Python環境、選んだモデル、入力音源と作業・出力データを保存できる空き容量。モデル本体の目安は下表を参照 |
+| OS | Windows 10/11 64bit向け。動作確認はWindowsで実施 |
+| GPU | NVIDIA CUDA対応GPUを推奨。通常の音楽・映像分離はVRAM 8 GBを出発点に、Mega 53は16 GB以上を推奨。モデル別の注意は下表を参照。CPU経路もあるが速度・動作はモデルと環境による |
+| RAM | 必要・推奨容量は未検証。音源の長さ、ステム数、同時に開くアプリなどで変動 |
+| ディスク | Python環境、選んだモデル、入力音源、作業ファイル、出力データの保存領域が必要。モデル本体の容量は下表を参照 |
 | その他 | [uv](https://docs.astral.sh/uv/)・[ffmpeg](https://ffmpeg.org/) が PATH にあること。セットアップとモデル取得にはネット接続が必要 |
 
-参考: 今回のRTX 4090でのDBS単体推論は、合成8秒音声・標準品質で約1.9秒でした（モデルの初回取得・ロードを除く）。モデル・設定・音源によって所要時間は異なります。
+上記のVRAMはGPUの**搭載容量**の目安です。他のアプリが同じGPUを使う場合は空き容量が少なくなります。VRAM不足時は、他のGPUアプリを終了し、試し分離など短い範囲で確認してください。短くしても不足が解消しない場合があります。
 
 ### モデル別の動作環境・容量
 
-以下の容量はモデルファイルの概算で、Python環境・一時ファイル・音声の保存領域は含みません。GPU欄は、**公式の推奨値・旧案内の目安・実測値を区別**しています。旧案内の目安は以前のREADMEまたはアプリ画面に掲載していた値で、算出条件が記録されていないため、動作保証や最低要件ではありません。実測値も特定条件での値であり、音源・設定・他のアプリによって変動します。
+表の「アプリの暫定推奨」は、以前の案内や限定的な測定を踏まえた**選択の目安**で、各容量のGPUによる最低要件・長尺音源・全品質設定の検証はできていません。「公式」はモデル提供元による推奨または目安です。**最低VRAMは本アプリでは未検証**です。モデル容量はPython環境や音声の保存領域を含みません。
 
-**RTX 4090実測**は、2026年10月26日にWindows・PyTorch 2.6.0+cu124で、44.1kHzステレオの合成音声8秒を「高速」で処理した際の `torch.cuda.max_memory_allocated()` の最大値です。CUDAコンテキストやPyTorch以外の使用量は含まず、必要な総VRAMの値ではありません。DBSの標準品質とRE-USEの実測は表中に別途条件を記載します。**CPU経路あり**はCUDAが使えない場合にCPUで動作する経路があるという意味であり、全モデル・全環境での速度や動作を保証するものではありません。
+| モデル・用途 | VRAMの推奨・目安 | モデル本体 | CPU |
+|---|---|---:|---|
+| BandIt Plus：映像音声3分離 | **6 GB以上**：アプリの暫定推奨。高品質設定はCDX23も使用し、必要量は未検証 | 約149 MB | CPU経路あり、性能未検証 |
+| DBS-TIGER DnR：映像音声3分離 | **4 GB以上**：アプリの暫定推奨。モノラル出力 | 約5 MB | CPU経路あり、性能未検証 |
+| BS-RoFormer：歌声抽出 | **8 GB以上**：アプリの暫定推奨 | 約640 MB | CPU経路あり、性能未検証 |
+| MelBand RoFormer：歌声抽出 | **8 GB以上**：アプリの暫定推奨 | 約913 MB | CPU経路あり、性能未検証 |
+| 音楽6ステム：RoFormer + HTDemucs | **8 GB以上**：アプリの暫定推奨。[Demucs公式](https://github.com/facebookresearch/demucs#memory-requirements-for-gpu-acceleration)は単体CLIで最小約3 GB・既定設定で約7 GBと案内 | HTDemucs 約55 MB ＋ RoFormer | CPU経路あり、性能未検証 |
+| MVSep Mega 53 v1：多楽器抽出 | **16 GB以上**：[モデル配布元の推奨](https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.21) | 約1.37 GB | CPU経路あり、性能未検証 |
+| CDX23：BandIt高品質アンサンブル | **推奨容量未確定**。BandItと併用、組合せ時の必要VRAMは未検証 | 約162 MB | CPU経路あり、性能未検証 |
+| DrumSep：ドラム細分化 | **6 GB以上**：アプリの暫定推奨 | 約168 MB | CPU経路あり、性能未検証 |
+| Karaoke MelBand：リード／バック推定 | **8 GB以上**：アプリの暫定推奨 | 約913 MB | CPU経路あり、性能未検証 |
+| MelBand Dereverb：残響除去 | **8 GB以上**：アプリの暫定推奨 | 約913 MB | CPU経路あり、性能未検証 |
+| Whisper small／medium／large-v3：文字起こし | **約2／5／10 GB**：[公式のVRAM目安](https://github.com/openai/whisper#available-models-and-languages)。実際は条件で変動 | 約484 MB／1.53 GB／3.09 GB | CPU経路あり、性能未検証 |
+| Resemblyzer：話者推定 | **推奨容量未確定** | ライブラリに同梱 | CPU経路あり、性能未検証 |
+| Basic Pitch：MIDI採譜 | GPU不要、ONNX RuntimeでCPU処理 | ライブラリに同梱 | CPU処理 |
+| NemotronLabs RE-USE：声の強調 | **推奨容量未確定**。本アプリ独自のWindows実装をRTX 4090・合成2秒で実行 | 約39 MB | CPU経路あり、実重みで未検証 |
+| Nemotron-3-Diarization：話者分離 | **推奨容量未確定**。Windows・RTX 4090で公式の多話者音声97.6秒の話者割り当てを実行 | 約397 MB | CPU経路あり、実重みで未検証 |
 
-測定条件と個別の値は[実測記録](docs/benchmarks/vram-rtx4090.json)、再測定の方法は[スクリプト](docs/benchmarks/bench_vram.py)を参照してください。実行前に、ほかのGPUアプリの使用状況を確認してください。
+Demucsの公式値は単体CLIに関する案内であり、このアプリの6ステム処理の必要容量を保証するものではありません。RE-USEの[公式対応環境](https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE)はLinux・NVIDIA Ampere、[Diarizationの公式対応環境](https://huggingface.co/nvidia/Nemotron-3-Diarization)はLinuxとAmpere・Ada・Hopper・Blackwellです。本アプリのWindowsでの実行確認とは区別してください。RE-USEの聴感品質、Diarizationの正解データに対する話者分離精度は未評価です。
 
-| モデル・用途 | モデル本体の容量目安 | GPU・VRAMの情報 | CPU |
-|---|---:|---|---|
-| BandIt Plus：映像音声3分離 | 約149 MB | 旧案内：約4 GB。RTX 4090実測：約0.81 GiB割当 | CPU経路あり、性能未検証 |
-| DBS-TIGER DnR：映像音声3分離 | 約5 MB | RTX 4090実測：約1.13 GiB割当・約1.54 GiB予約（8秒・標準品質） | CPU経路あり、性能未検証 |
-| BS-RoFormer：歌声抽出 | 約640 MB | 旧案内：約6 GB。RTX 4090実測：約1.56 GiB割当 | CPU経路あり、性能未検証 |
-| MelBand RoFormer：歌声抽出 | 約913 MB | 旧案内：約6 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
-| HTDemucs 6ステム：楽器分離 | 約55 MB | 旧案内：音楽6ステムで約6 GB、8 GB推奨。RTX 4090実測：BS-RoFormerとの組合せで約1.56 GiB割当。[Demucs公式](https://github.com/facebookresearch/demucs#memory-requirements-for-gpu-acceleration)は一般的なGPU実行で最小約3 GB・既定設定で約7 GBと案内 | CPU経路あり、性能未検証 |
-| MVSep Mega 53 v1：多楽器抽出 | 約1.37 GB | [配布元](https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.21)はVRAM 16 GB以上を推奨。RTX 4090実測：約3.82 GiB割当（2カテゴリ選択） | CPU経路あり、性能未検証 |
-| CDX23：BandIt高品質アンサンブル | 約162 MB | BandIt Plusと併用。組合せ時の必要VRAMは未検証 | CPU経路あり、性能未検証 |
-| DrumSep：ドラム細分化 | 約168 MB | 旧案内：約4 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
-| Karaoke MelBand：リード／バック推定 | 約913 MB | 旧案内：約6 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
-| MelBand Dereverb：残響除去 | 約913 MB | 旧案内：約6 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
-| Whisper small／medium／large-v3：文字起こし | 約484 MB／1.53 GB／3.09 GB | [公式目安](https://github.com/openai/whisper)：VRAM約2／5／10 GB。実際は条件で変動 | CPU経路あり、性能未検証 |
-| Resemblyzer：話者推定 | ライブラリに同梱 | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
-| Basic Pitch：MIDI採譜 | ライブラリに同梱 | 最小・推奨VRAM未確認 | ONNX RuntimeでCPU処理 |
-| NemotronLabs RE-USE：声の強調 | 約39 MB | [公式](https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE)の対応環境はLinux・NVIDIA Ampere（推論条件としてA100を記載）。本アプリの独自PyTorch実装はRTX 4090で約0.98 GiB割当を実測（合成2秒） | CPU経路あり、実重みで未検証 |
-| Nemotron-3-Diarization：話者分離 | 約397 MB | [公式](https://huggingface.co/nvidia/Nemotron-3-Diarization)はLinux、Ampere・Ada・Hopper・Blackwellを対応環境として記載。最大8話者・16 kHzモノラル。本アプリはWindows・RTX 4090で公式の多話者音声97.6秒に対し、話者の割り当てまで実行 | CPU経路あり、実重みで未検証 |
+#### 暫定推奨の根拠とVRAM実測
 
-Demucsの公式値はDemucs単体のCLIに関する案内であり、このアプリの6ステム処理における動作保証値ではありません。
+旧案内ではBandIt・DrumSepに約4 GB、RoFormer・Karaoke・Dereverbに約6 GB、音楽6ステムに約6 GB・推奨8 GBを掲載していました。ただし算出条件が残っていないため、最低要件ではありません。上表のアプリ独自推奨はこれらを参考に余裕を加えた暫定値です。DBSは下記の短い合成音声での実測を参考にしています。実際の余裕は環境により変わります。
 
-RE-USEの聴感品質、Diarizationの正解音源との話者分離精度はいずれも未評価です。これらのGPU推論の確認は特定環境での結果であり、他環境での動作や品質を保証するものではありません。メモリ不足の場合は、短い範囲で試すか他のGPUアプリを終了してください。分離モデルを切り替える際は前段の重みをCPUへ退避し、GPUへの同時常駐を抑えます。「モデルメモリ解放」は分離モデルのキャッシュを解放します（ダウンロード済みファイルは保持。Whisperなど別機能のキャッシュは対象外）。
+**RTX 4090実測**は、2026年10月26日にWindows・PyTorch 2.6.0+cu124で44.1kHzステレオの合成音声8秒を「高速」処理した際の `torch.cuda.max_memory_allocated()` の最大値です。CUDAコンテキストやPyTorch以外の使用量は含まれず、必要な総VRAMの値ではありません。DBSの標準品質とRE-USEの実測は別途条件を記載しています。
+
+| モデル | 測定時のPyTorchピーク |
+|---|---|
+| BandIt Plus | 約0.81 GiB割当 |
+| BS-RoFormer | 約1.56 GiB割当 |
+| 音楽6ステム（BS-RoFormer + HTDemucs） | 約1.56 GiB割当 |
+| MVSep Mega 53 v1 | 約3.82 GiB割当（2カテゴリ選択） |
+| DBS-TIGER DnR | 約1.13 GiB割当・約1.54 GiB予約（8秒・標準品質） |
+| NemotronLabs RE-USE | 約0.98 GiB割当（合成2秒、独自PyTorch実装） |
+
+測定条件と個別の値は[実測記録](docs/benchmarks/vram-rtx4090.json)、再測定の方法は[スクリプト](docs/benchmarks/bench_vram.py)を参照してください。モデルを切り替える際は前段の重みをCPUへ退避し、GPUへの同時常駐を抑えます。「モデルメモリ解放」は分離モデルのキャッシュを解放します（ダウンロード済みファイルは保持。Whisperなど別機能のキャッシュは対象外）。
 
 ## セットアップ
 

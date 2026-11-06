@@ -274,8 +274,9 @@ class Engine:
                 from dbs_adapter import downloaded
                 item["downloaded"] = downloaded()
                 item["cached"] = entry["id"] in cached
-            if download_info.get(entry["id"], {}).get("gpu_reference"):
-                item["gpu_reference"] = download_info[entry["id"]]["gpu_reference"]
+            for field in ("gpu_guidance", "gpu_reference"):
+                if download_info.get(entry["id"], {}).get(field):
+                    item[field] = download_info[entry["id"]][field]
             result.append(item)
         return result
 

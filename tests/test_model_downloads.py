@@ -55,6 +55,13 @@ class DownloadManagerTests(unittest.TestCase):
         self.assertIn("約1.54 GiB予約", groups["dbs_dnr"]["gpu_reference"])
         self.assertIn("16 GB以上", groups["mega_53"]["gpu_reference"])
         self.assertIn("最低要件ではありません", " ".join(groups["dbs_dnr"]["requirements"]))
+        self.assertIn("6 GB以上", groups["bandit"]["gpu_guidance"])
+        self.assertIn("未検証", groups["bandit"]["gpu_guidance"])
+        self.assertIn("8 GB以上", groups["bs_roformer"]["gpu_guidance"])
+        self.assertIn("16 GB以上（モデル提供元の推奨）", groups["mega_53"]["gpu_guidance"])
+        self.assertIn("未確定", groups["nemotron_diarization"]["gpu_guidance"])
+        self.assertIn("GPUは不要", groups["basic_pitch"]["gpu_guidance"])
+        self.assertEqual(groups["bandit"]["requirements"][0], groups["bandit"]["gpu_guidance"])
 
 
 if __name__ == "__main__":

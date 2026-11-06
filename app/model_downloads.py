@@ -107,6 +107,26 @@ def _groups():
         "dereverb": "旧案内：約6 GB（算出条件不明・未検証）。",
         "nemotron_reuse": "RTX 4090実測：約0.98 GiB割当（合成2秒）。",
     }
+    # GPU選びのための暫定目安。公式値以外は実機で必要容量を検証した値ではない。
+    gpu_guidance = {
+        "bandit": "推奨VRAM：6 GB以上（アプリの暫定目安・未検証）。最低VRAM：未検証。高品質のCDX23併用は別途未検証。",
+        "dbs_dnr": "推奨VRAM：4 GB以上（短い合成音の実測を基にした暫定目安・未検証）。最低VRAM：未検証。",
+        "bs_roformer": "推奨VRAM：8 GB以上（旧案内を基にした暫定目安・未検証）。最低VRAM：未検証。6ステム併用時も同じ暫定目安。",
+        "mel_band_roformer": "推奨VRAM：8 GB以上（旧案内を基にした暫定目安・未検証）。最低VRAM：未検証。6ステム併用時も同じ暫定目安。",
+        "htdemucs_6s": "推奨VRAM：音楽6ステムは8 GB以上（旧案内を基にした暫定目安・未検証）。本アプリの最低VRAM：未検証。",
+        "mega_53": "推奨VRAM：16 GB以上（モデル提供元の推奨）。最低VRAM：未検証。",
+        "cdx23": "推奨・最低VRAM：未確定。BandItと併用した高品質処理の必要容量は未検証。",
+        "drumsep": "推奨VRAM：6 GB以上（旧案内を基にした暫定目安・未検証）。最低VRAM：未検証。",
+        "karaoke": "推奨VRAM：8 GB以上（旧案内を基にした暫定目安・未検証）。最低VRAM：未検証。",
+        "dereverb": "推奨VRAM：8 GB以上（旧案内を基にした暫定目安・未検証）。最低VRAM：未検証。",
+        "nemotron_reuse": "推奨・最低VRAM：未確定。RTX 4090（24 GB）で2秒の合成音を処理した例あり。",
+        "nemotron_diarization": "推奨・最低VRAM：未確定。RTX 4090（24 GB）で約98秒の実音声を処理した例あり。",
+        "whisper_small": "必要VRAMの公式目安：約2 GB。条件により変動。",
+        "whisper_medium": "必要VRAMの公式目安：約5 GB。条件により変動。",
+        "whisper_large": "必要VRAMの公式目安：約10 GB。条件により変動。",
+        "resemblyzer": "必要・推奨VRAM：未確定。CPU経路あり。",
+        "basic_pitch": "GPUは不要。ONNX RuntimeでCPU実行。",
+    }
     common = "共通：Windows・Python 3.11の本アプリ環境。必要メモリ容量は未計測。"
     general = "CPUまたはCUDA対応NVIDIA GPU。GPUを推奨。最低VRAMは未公表。"
     for group in groups:
@@ -130,7 +150,8 @@ def _groups():
             detail = "ONNX RuntimeでCPU実行。必要RAMは未計測。"
         else:
             detail = general
-        group["requirements"] = [common, detail]
+        group["gpu_guidance"] = gpu_guidance[ident]
+        group["requirements"] = [gpu_guidance[ident], common, detail]
         if ident in gpu_reference:
             group["gpu_reference"] = gpu_reference[ident]
             notes = []
