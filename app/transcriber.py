@@ -9,16 +9,20 @@ Whisper (ローカル) で音声トラックを文字起こしし、セリフ単
 を生成して ZIP にまとめる。
 """
 import csv
+import hashlib
 import json
+import math
 import os
 import threading
 import zipfile
+from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 import torch
 
 MODELS = {"small": "small", "medium": "medium", "large": "large-v3"}
+MODEL_ROOT = Path(__file__).resolve().parent.parent / "models"
 CLIP_PAD_SECONDS = 0.15  # セリフ前後の余白
 FADE_SECONDS = 0.01
 
@@ -34,9 +38,28 @@ class Transcriber:
 
         name = MODELS.get(size, "medium")
         if name not in self._models:
+            # 名前で load_model を呼ぶとネットワークから暗黙に取得される。
+            # 管理画面か既存 Whisper キャッシュにある検証済みファイルだけを使う。
+            expected = whisper._MODELS[name].split("/")[-2]
+            cache = Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache"))
+            candidates = [MODEL_ROOT / "whisper" / f"{name}.pt",
+                          cache / "whisper" / f"{name}.pt"]
+            model_path = None
+            for candidate in candidates:
+                if not candidate.is_file():
+                    continue
+                digest = hashlib.sha256()
+                with candidate.open("rb") as source:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                if digest.hexdigest() == expected:
+                    model_path = candidate
+                    break
+            if model_path is None:
+                raise RuntimeError(f"Whisper {name} の検証済みモデルがありません。モデル管理からダウンロードしてください。")
             if progress_cb:
-                progress_cb(0, f"音声認識モデルをダウンロード/読込中 (Whisper {name})...")
-            self._models[name] = whisper.load_model(name, device=self.device)
+                progress_cb(0, f"音声認識モデルを読込中 (Whisper {name})...")
+            self._models[name] = whisper.load_model(str(model_path), device=self.device)
         return self._models[name]
 
     def transcribe(self, audio, sr, model_size="medium", language=None, progress_cb=None):
@@ -90,6 +113,129 @@ _SENTENCE_END = ("。", "．", ".", "!", "?", "！", "？")
 
 _voice_encoder = None
 SPEAKER_NAMES = [f"話者{c}" for c in "ABCDEFGH"]
+
+
+def _assign_diarization_segments(segments, turns):
+    """発話区間に最も長く重なる話者を割り当てる。重なりがなければ未割当。"""
+    for segment in segments:
+        overlaps = {}
+        for turn in turns:
+            overlap = max(0.0, min(float(segment["end"]), turn["end"]) -
+                          max(float(segment["start"]), turn["start"]))
+            if overlap:
+                overlaps[turn["speaker"]] = overlaps.get(turn["speaker"], 0.0) + overlap
+        segment["speaker"] = max(overlaps, key=overlaps.get) if overlaps else ""
+    return segments
+
+
+class NemotronDiarizer:
+    """モデル管理で明示取得したローカル重みのみを利用する話者区間推定。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._processor = None
+        self._model = None
+
+    def _load(self):
+        path = MODEL_ROOT / "nemotron-3-diarization"
+        if not all((path / name).is_file() for name in
+                   ("config.json", "processor_config.json", "model.safetensors")):
+            raise RuntimeError("Nemotron-3-Diarization がありません。モデル管理からダウンロードしてください。")
+        if self._model is None:
+            try:
+                from transformers import AutoModelForAudioFrameClassification, AutoProcessor
+                processor = AutoProcessor.from_pretrained(str(path), local_files_only=True)
+                model = AutoModelForAudioFrameClassification.from_pretrained(str(path), local_files_only=True)
+            except ImportError as exc:
+                raise RuntimeError("Nemotron の実行環境がありません。セットアップ手順で追加してください。") from exc
+            self._processor = processor
+            self._model = model.to("cuda" if torch.cuda.is_available() else "cpu").eval()
+        return self._processor, self._model
+
+    def diarize(self, audio, sr, progress_cb=None):
+        """音声から、重複を保持した話者区間 [{start,end,speaker}] を返す。
+
+        入力は (samples, channels)。モデルへの入力だけを16kHzモノラルに変換し、
+        元の音声データには変更を加えない。重複する別話者の区間は統合しない。
+        """
+        audio = np.asarray(audio, dtype=np.float32)
+        if audio.ndim != 2 or audio.shape[1] not in (1, 2) or not np.isfinite(audio).all():
+            raise ValueError("モノラルまたはステレオの正常な音声が必要です")
+        if not isinstance(sr, (int, np.integer)) or sr <= 0:
+            raise ValueError("サンプルレートが正しくありません")
+        if len(audio) < sr // 10:
+            raise RuntimeError("Nemotron の話者分離には0.1秒以上の音声が必要です。")
+        with self._lock:
+            if progress_cb:
+                progress_cb(0, "Nemotron で話者区間を分析中...")
+            processor, model = self._load()
+            mono = audio.mean(axis=1)
+            rate = processor.feature_extractor.sampling_rate
+            if sr != rate:
+                import soxr
+                mono = soxr.resample(mono, sr, rate, quality="HQ").astype(np.float32)
+            if len(mono) < rate // 10:
+                raise RuntimeError("Nemotron の話者分離には0.1秒以上の音声が必要です。")
+            with torch.inference_mode():
+                if len(mono) <= rate * 30:
+                    inputs = processor(mono, sampling_rate=rate, return_tensors="pt").to(model.device, dtype=model.dtype)
+                    logits = model(**inputs).logits
+                    detected = processor.extract_speaker_dict(logits, inputs.attention_mask)[0]
+                else:
+                    # 公式ストリーミングAPI: チャンク間で speaker_cache を引き継ぎ、
+                    # 話者IDを維持する。推論結果はCPUへ退避し、VRAM使用を抑える。
+                    processor.set_streaming_mode("low_latency")
+                    first_len = processor.num_samples_first_audio_chunk
+                    inputs = processor(mono[:first_len], sampling_rate=rate, is_streaming=True,
+                                       is_first_audio_chunk=True, return_tensors="pt")
+                    outputs = model(**inputs.to(model.device, dtype=model.dtype))
+                    cache = outputs.speaker_cache
+                    chunks = [outputs.logits.cpu()]
+                    frame_idx = processor.num_mel_frames_per_step
+                    start = processor.audio_chunk_start(frame_idx)
+                    while start + processor.num_samples_per_audio_chunk <= len(mono):
+                        end = start + processor.num_samples_per_audio_chunk
+                        inputs = processor(mono[start:end], sampling_rate=rate, is_streaming=True,
+                                           is_first_audio_chunk=False, return_tensors="pt")
+                        outputs = model(**inputs.to(model.device, dtype=model.dtype), speaker_cache=cache)
+                        chunks.append(outputs.logits.cpu())
+                        cache = outputs.speaker_cache
+                        frame_idx += processor.num_mel_frames_per_step
+                        start = processor.audio_chunk_start(frame_idx)
+                        if progress_cb:
+                            progress_cb(min(95, int(95 * start / len(mono))), "Nemotron で話者区間を分析中...")
+                    inputs = processor(mono[start:], sampling_rate=rate, is_streaming=True,
+                                       is_first_audio_chunk=False, is_last_audio_chunk=True, return_tensors="pt")
+                    outputs = model(**inputs.to(model.device, dtype=model.dtype), speaker_cache=cache)
+                    chunks.append(outputs.logits.cpu())
+                    detected = processor.extract_speaker_dict(torch.cat(chunks, dim=1))[0]
+            turns = []
+            for item in detected:
+                speaker = int(item["Speaker"])
+                if 0 <= speaker < len(SPEAKER_NAMES):
+                    start, end = float(item["Start"]), float(item["End"])
+                    if not math.isfinite(start) or not math.isfinite(end):
+                        raise RuntimeError("Nemotron から不正な話者区間が返されました")
+                    start, end = max(0.0, start), min(len(audio) / sr, end)
+                    if start < end:
+                        turns.append({"start": start, "end": end, "speaker": SPEAKER_NAMES[speaker]})
+            if progress_cb:
+                progress_cb(100, "話者区間の分析が完了しました")
+            return turns
+
+    def assign(self, audio, sr, segments, progress_cb=None):
+        if not segments:
+            return segments
+
+        def report(percent, message):
+            if progress_cb:
+                progress_cb(80 + int(percent * 0.15), message)
+
+        turns = self.diarize(audio, sr, progress_cb=report)
+        return _assign_diarization_segments(segments, turns)
+
+
+nemotron_diarizer = NemotronDiarizer()
 
 
 def assign_speakers(audio, sr, segments, num_speakers=0, progress_cb=None):

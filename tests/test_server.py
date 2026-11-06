@@ -39,6 +39,17 @@ class ServerTests(unittest.TestCase):
         with patch.object(server.threading, "Thread"):
             return server.create_job(**args)
 
+    def test_music_mode_guides_when_demucs_is_missing_before_upload(self):
+        groups = [{"id": "bs_roformer", "label": "BS-RoFormer", "downloaded": True},
+                  {"id": "htdemucs_6s", "label": "HTDemucs 6ステム", "downloaded": False}]
+        with patch("model_downloads.catalog", return_value=groups):
+            with self.assertRaises(HTTPException) as error:
+                self.create(mode="music")
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertIn("HTDemucs", error.exception.detail)
+        self.assertEqual(server.jobs, {})
+        self.assertEqual(list(Path(self.temp.name).iterdir()), [])
+
     def test_rejects_invalid_settings_before_creating_job(self):
         for values in ({"quality": "typo"}, {"model_id": "dbs_dnr"},
                        {"selected_stems": '"vocals"'}, {"selected_stems": "[]"},

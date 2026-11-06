@@ -54,7 +54,7 @@ class DBSAdapterTests(unittest.TestCase):
             folder = Path(temporary)
             with patch.object(dbs_adapter, "MODELS_DIR", folder):
                 with patch.object(dbs_adapter.urllib.request, "urlopen", return_value=io.BytesIO(data)):
-                    path = dbs_adapter._checked_file(spec)
+                    path = dbs_adapter._checked_file(spec, allow_download=True)
                 self.assertEqual(path.read_bytes(), data)
                 self.assertEqual(list(folder.glob("*.partial")), [])
                 with patch.object(dbs_adapter.urllib.request, "urlopen") as network:
@@ -75,7 +75,7 @@ class DBSAdapterTests(unittest.TestCase):
             with patch.object(dbs_adapter, "MODELS_DIR", folder):
                 with patch.object(dbs_adapter.urllib.request, "urlopen", return_value=io.BytesIO(b"bad")):
                     with self.assertRaises(RuntimeError):
-                        dbs_adapter._checked_file(spec)
+                        dbs_adapter._checked_file(spec, allow_download=True)
             self.assertEqual(list(folder.iterdir()), [unrelated])
 
     @unittest.skipUnless(torch.cuda.is_available() and dbs_adapter.downloaded()

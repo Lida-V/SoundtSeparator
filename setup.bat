@@ -29,8 +29,9 @@ uv pip install --python .venv demucs fastapi "uvicorn[standard]" python-multipar
 echo [4/4] torch依存パッケージ (--no-deps でtorchを保護)...
 uv pip install --python .venv --no-deps rotary-embedding-torch openai-whisper basic-pitch resemblyzer || (pause & exit /b 1)
 uv pip install --python .venv tiktoken more-itertools pretty_midi resampy onnxruntime mir_eval webrtcvad-wheels || (pause & exit /b 1)
+uv pip install --python .venv "transformers==5.18.0" "huggingface-hub==1.33.0" "tokenizers==0.23.1" "safetensors>=0.8,<1" || (pause & exit /b 1)
 
 echo.
 echo セットアップ完了! run.bat で起動してください
-echo (AIモデルは初回使用時に models/ へ自動ダウンロードされます)
+echo (起動後「AIモデルの管理」から必要なモデルを選んで取得してください)
 pause

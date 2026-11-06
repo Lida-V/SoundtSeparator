@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from separator import SAMPLE_RATE, engine, validate_request
-from transcriber import assign_speakers, export_dialogue, segment_words, transcriber
+from transcriber import assign_speakers, export_dialogue, nemotron_diarizer, segment_words, transcriber
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(os.path.dirname(BASE_DIR), "output")
@@ -133,6 +133,63 @@ def get_models():
     }
 
 
+model_download_jobs = {}
+model_download_lock = threading.Lock()
+
+
+@app.get("/api/model-downloads")
+def list_model_downloads():
+    from model_downloads import catalog
+    return {"groups": catalog()}
+
+
+@app.post("/api/model-downloads/{model_id}")
+def start_model_download(model_id: str):
+    from model_downloads import catalog, download
+    group = next((g for g in catalog() if g["id"] == model_id), None)
+    if group is None:
+        raise HTTPException(404, "モデルが見つかりません")
+    if not group["downloadable"]:
+        raise HTTPException(400, "このモデルはセットアップに同梱されています")
+    with model_download_lock:
+        if any(j["status"] in ("queued", "running") for j in model_download_jobs.values()):
+            raise HTTPException(409, "別のモデルをダウンロード中です")
+        job_id = uuid.uuid4().hex[:12]
+        model_download_jobs[job_id] = {"status": "queued", "progress": 0, "message": "待機中", "error": None}
+
+    def run():
+        def report(pct, message):
+            with model_download_lock:
+                model_download_jobs[job_id].update(status="running", progress=pct, message=message)
+        try:
+            download(model_id, report)
+            with model_download_lock:
+                model_download_jobs[job_id].update(status="done", progress=100, message="取得完了")
+        except Exception as exc:
+            with model_download_lock:
+                model_download_jobs[job_id].update(status="error", message="取得に失敗しました", error=str(exc))
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/model-downloads/jobs/{job_id}")
+def get_model_download_job(job_id: str):
+    with model_download_lock:
+        job = model_download_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, "ダウンロード状況が見つかりません")
+        return dict(job)
+
+
+def require_downloaded_models(*model_ids):
+    from model_downloads import catalog
+    groups = {g["id"]: g for g in catalog()}
+    missing = [groups[mid]["label"] for mid in model_ids if not groups[mid]["downloaded"]]
+    if missing:
+        raise HTTPException(400, "必要なモデルが未取得です。「AIモデルの管理」から取得してください: " + "、".join(missing))
+
+
 @app.post("/api/models/release")
 def release_models():
     if not engine.release_models():
@@ -170,6 +227,12 @@ def create_job(
         raise HTTPException(400, str(exc)) from exc
     if not file.filename:
         raise HTTPException(400, "音声・動画ファイルを選択してください")
+    dependencies = [model_id]
+    if mode == "music":
+        dependencies.append("htdemucs_6s")
+    if model_id == "bandit" and quality == "high":
+        dependencies.append("cdx23")
+    require_downloaded_models(*dependencies)
     model = next(m for m in engine.model_catalog() if m["id"] == model_id)
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
@@ -214,7 +277,7 @@ def get_job(job_id: str):
         if job is None:
             raise HTTPException(404, "job not found")
         job = dict(job)
-    if job["status"] == "done" and job.get("kind") not in ("dialogue", "subsep"):
+    if job["status"] == "done" and job.get("kind") not in ("dialogue", "subsep", "speaker_stems"):
         job["stems"] = [
             {**spec, "url": f"/api/jobs/{job_id}/audio/{spec['name']}.wav"}
             for spec in job["stem_specs"]
@@ -230,7 +293,7 @@ def get_audio(job_id: str, filename: str):
         job = jobs.get(job_id)
         if job is None or job.get("status") != "done":
             raise HTTPException(404)
-        specs = job.get("stem_specs", []) if job.get("kind") != "subsep" else job.get("stems", [])
+        specs = job.get("stems", []) if job.get("kind") in ("subsep", "speaker_stems") else job.get("stem_specs", [])
         allowed = {s["name"] + ".wav" for s in specs} | {"original.wav"}
     if not re.fullmatch(r"[a-zA-Z0-9_-]+\.wav", filename) or filename not in allowed:
         raise HTTPException(404)
@@ -300,6 +363,7 @@ def process_subsep_job(job_id: str, wav_path: str, kind: str):
 async def subseparate_api(file: UploadFile = File(...), kind: str = Form(...)):
     if kind not in SUBSEP_SPECS:
         raise HTTPException(400, "invalid kind")
+    require_downloaded_models("drumsep" if kind == "drums" else "karaoke")
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -316,6 +380,74 @@ async def subseparate_api(file: UploadFile = File(...), kind: str = Form(...)):
             "created": time.time(),
         }
     threading.Thread(target=process_subsep_job, args=(job_id, wav_path, kind), daemon=True).start()
+    return {"id": job_id}
+
+
+SPEAKER_STEM_COLORS = ("#60a5fa", "#f472b6", "#34d399", "#fb923c", "#c084fc", "#facc15", "#2dd4bf", "#f87171")
+
+
+def process_speaker_stems_job(job_id: str, wav_path: str):
+    """音の内容を分離せず、話者の活動区間で元音声を分配する。"""
+    try:
+        from diarization_stems import iter_diarization_stems, summarize_diarization_activity
+        set_job(job_id, status="processing", progress=0, message="音声を読み込み中...")
+        audio, sr = sf.read(wav_path, dtype="float32", always_2d=True)
+        if audio.shape[1] not in (1, 2) or len(audio) < sr // 10 or not np.isfinite(audio).all():
+            raise ValueError("0.1秒以上の正常なモノラルまたはステレオ音声が必要です")
+
+        def cb(pct, message):
+            set_job(job_id, progress=min(80, max(0, int(pct * .8))), message=message)
+
+        turns = nemotron_diarizer.diarize(audio, sr, progress_cb=cb)
+        if not turns:
+            raise RuntimeError("話者を検出できませんでした。話し声のあるトラックを選んでください")
+        activity = summarize_diarization_activity(len(audio), sr, turns)
+        set_job(job_id, progress=82, message="話者と重なりのステムを作成中...")
+        separated = iter_diarization_stems(audio, sr, turns)
+        job_dir = os.path.join(OUTPUT_DIR, job_id)
+        result = []
+        for name, data in separated:
+            if name.startswith("speaker_") and len(name) == len("speaker_a") and name[-1] in "abcdefgh":
+                index = ord(name[-1]) - ord("a")
+                label, color = f"話者{chr(ord('A') + index)}（単独）", SPEAKER_STEM_COLORS[index]
+            elif name == "overlap":
+                label, color = "重なり（複数話者）", "#fb7185"
+            elif name == "residual":
+                label, color = "未検出・その他", "#94a3b8"
+            else:
+                raise RuntimeError("話者ステム名が不正です")
+            data = np.asarray(data, dtype=np.float32)
+            if data.shape != audio.shape or not np.isfinite(data).all():
+                raise RuntimeError("話者ステムの形式が不正です")
+            sf.write(os.path.join(job_dir, name + ".wav"), data, sr, subtype="FLOAT")
+            result.append({"name": name, "label": label, "color": color,
+                           "url": f"/api/jobs/{job_id}/audio/{name}.wav"})
+            del data
+        warnings = []
+        if activity["overlap_samples"] == 0:
+            warnings.append("複数話者の重なりは検出されませんでした。検出漏れの可能性もあるため確認してください。")
+        set_job(job_id, status="done", progress=100, message="完了", stems=result, warnings=warnings)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        set_job(job_id, status="error", message=str(exc))
+
+
+@app.post("/api/speaker-stems")
+def speaker_stems_api(file: UploadFile = File(...)):
+    require_downloaded_models("nemotron_diarization")
+    if not file.filename:
+        raise HTTPException(400, "話し声のトラックを選択してください")
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = os.path.join(OUTPUT_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    wav_path = os.path.join(job_dir, "speaker_input.wav")
+    with open(wav_path, "wb") as output:
+        shutil.copyfileobj(file.file, output)
+    with jobs_lock:
+        jobs[job_id] = {"id": job_id, "kind": "speaker_stems", "status": "queued",
+                        "progress": 0, "message": "準備中...", "created": time.time()}
+    threading.Thread(target=process_speaker_stems_job, args=(job_id, wav_path), daemon=True).start()
     return {"id": job_id}
 
 
@@ -340,7 +472,10 @@ def process_dialogue_job(job_id: str, wav_path: str, opts: dict):
             if not segments:
                 raise RuntimeError("セリフを検出できませんでした (対象トラックに音声が含まれているか確認してください)")
             if opts["diarize"]:
-                segments = assign_speakers(audio, sr, segments, num_speakers=opts["num_speakers"], progress_cb=cb)
+                if opts["diarization_model"] == "nemotron":
+                    segments = nemotron_diarizer.assign(audio, sr, segments, progress_cb=cb)
+                else:
+                    segments = assign_speakers(audio, sr, segments, num_speakers=opts["num_speakers"], progress_cb=cb)
             annotated = [
                 {"index": i, "start": s["start"], "end": s["end"],
                  "duration": round(s["end"] - s["start"], 3),
@@ -388,9 +523,19 @@ async def dialogue_export_api(
     min_len: float = Form(2.0),
     max_len: float = Form(10.0),
     diarize: bool = Form(False),
+    diarization_model: str = Form("resemblyzer"),
     num_speakers: int = Form(0),
     segments: str = Form(""),
 ):
+    if diarization_model not in ("resemblyzer", "nemotron"):
+        raise HTTPException(400, "話者分離モデルが正しくありません")
+    if action == "analyze":
+        if model_size not in ("small", "medium", "large"):
+            raise HTTPException(400, "音声認識モデルが正しくありません")
+        needed = ["whisper_" + model_size]
+        if diarize:
+            needed.append("nemotron_diarization" if diarization_model == "nemotron" else "resemblyzer")
+        require_downloaded_models(*needed)
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -439,6 +584,7 @@ async def dialogue_export_api(
         "min_len": float(np.clip(min_len, 0.3, 60.0)),
         "max_len": float(np.clip(max_len, 1.0, 120.0)),
         "diarize": diarize,
+        "diarization_model": diarization_model,
         "num_speakers": int(np.clip(num_speakers, 0, 8)),
         "segments": parsed_segments,
     }
@@ -534,6 +680,9 @@ def apply_effect(
     重い同期処理のため sync def (イベントループを塞がない)。"""
     from repair import declick, dehum
 
+    if effect in ("dereverb", "nemotron_reuse"):
+        require_downloaded_models(effect)
+
     raw = file.file.read()
     audio, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
 
@@ -546,6 +695,19 @@ def apply_effect(
         model_audio = resample_audio(audio, sr, SAMPLE_RATE)
         out = engine.dereverb(model_audio.T).T  # (samples, ch) <-> (ch, samples)
         out = resample_audio(out, SAMPLE_RATE, sr)[:len(audio)]
+        if len(out) < len(audio):
+            out = np.pad(out, ((0, len(audio) - len(out)), (0, 0)))
+    elif effect == "nemotron_reuse":
+        from reuse_adapter import enhance
+        model_rate = sr if 8000 <= sr <= 48000 else SAMPLE_RATE
+        model_audio = resample_audio(audio, sr, model_rate)
+        try:
+            # 同時実行で分離モデルとGPUメモリを競合させない。
+            with engine._lock:
+                out = enhance(model_audio.T, sample_rate=model_rate).T
+        except (ValueError, FileNotFoundError, RuntimeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        out = resample_audio(out, model_rate, sr)[:len(audio)]
         if len(out) < len(audio):
             out = np.pad(out, ((0, len(audio) - len(out)), (0, 0)))
     elif effect == "pitchshift":

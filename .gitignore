@@ -14,12 +14,15 @@ node_modules/
 __pycache__/
 *.pyc
 
-# モデルチェックポイント (初回起動時に自動ダウンロード)
+# モデルチェックポイント（利用者が必要なものを取得）
 models/*.ckpt
 models/*.chpt
 models/*.th
 models/*.partial
 models/*.safetensors
+/models/nemotron-reuse/
+/models/nemotron-3-diarization/
+/models/whisper/
 
 # 分離結果・一時ファイル
 output/

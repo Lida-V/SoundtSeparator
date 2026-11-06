@@ -17,6 +17,8 @@ let lastSubmittedFile = null;
 let currentJobMetadata = null;
 let selectedModelByMode = {};
 let selectedStemNamesByModel = {};
+let downloadGroups = [];
+const modelDownloadJobs = new Map();
 const MODE_INFO = {
   dme: { title: "🎬 映像・動画音声", description: "話し声 / 効果音 / BGM" },
   music: { title: "🎸 音楽・6ステム", description: "ボーカル / ドラム / ベース / ギター / ピアノ / その他" },
@@ -67,7 +69,7 @@ function renderModelOptions() {
     radio.type = "radio"; radio.name = "model_id"; radio.value = m.id; radio.checked = m === selected;
     const body = uiElement("div", "model-card-body");
     const heading = uiElement("div", "model-card-heading");
-    heading.append(uiElement("strong", "", m.label), uiElement("span", "model-state" + (m.downloaded ? " ready" : ""), m.downloaded ? "取得済み" : "初回ダウンロード"));
+    heading.append(uiElement("strong", "", m.label), uiElement("span", "model-state" + (m.downloaded ? " ready" : ""), m.downloaded ? "取得済み" : "未取得"));
     body.append(heading, uiElement("p", "", m.description || ""));
     label.append(radio, body);
     radio.addEventListener("change", () => { selectedModelByMode[mode] = m.id; renderModelDetails(); });
@@ -83,7 +85,7 @@ function renderModelDetails() {
   $("stem-selector").classList.toggle("hidden", currentMode() !== "mega" || !model);
   if (!model) return;
   const facts = uiElement("div", "model-facts");
-  if (model.download_mb) facts.append(uiElement("span", "", `初回取得 約${model.download_mb >= 1000 ? (model.download_mb / 1000).toFixed(1) + " GB" : model.download_mb + " MB"}`));
+  if (model.download_mb) facts.append(uiElement("span", "", `取得容量 約${model.download_mb >= 1000 ? (model.download_mb / 1000).toFixed(1) + " GB" : model.download_mb + " MB"}`));
   if (model.vram_gb) facts.append(uiElement("span", "", `VRAM目安 ${model.vram_gb} GB以上`));
   facts.append(uiElement("span", "", model.cached ? "メモリに読み込み済み" : "使用時に読み込み"));
   if (model.source_url && /^https?:\/\//.test(model.source_url)) {
@@ -92,6 +94,12 @@ function renderModelDetails() {
     facts.append(link);
   }
   detail.append(facts);
+  if (!model.downloaded) {
+    const help = uiElement("button", "text-button", "利用前にモデルを取得する ↑");
+    help.type = "button";
+    help.addEventListener("click", openModelManager);
+    detail.append(help);
+  }
   const notes = Array.isArray(model.notes) ? model.notes : model.notes ? [model.notes] : [];
   notes.forEach((note) => detail.append(uiElement("p", "settings-note", note)));
   if (currentMode() === "mega") renderStemOptions(model.stems || []);
@@ -154,7 +162,7 @@ async function refreshModelCatalog() {
       ], defaults: { dme: "bandit", music: "bs_roformer" } };
       renderModeOptions("dme");
     }
-    $("catalog-status").textContent = "モデル情報を取得できません。既存モデルで利用できます。";
+    $("catalog-status").textContent = "モデル情報を取得できません。接続状況を確認してください。";
     $("runtime-status").textContent = "実行環境の情報を取得できません";
     $("release-models").disabled = true;
   }
@@ -165,6 +173,107 @@ async function responseError(response, fallback) {
     const body = await response.json();
     return new Error(typeof body.detail === "string" ? body.detail : body.message || `${fallback} (${response.status})`);
   } catch (_) { return new Error(`${fallback} (${response.status})`); }
+}
+
+function openModelManager() {
+  const manager = $("model-manager");
+  manager.open = true;
+  manager.scrollIntoView({ behavior: "smooth", block: "start" });
+  refreshModelDownloads();
+}
+
+function renderModelDownloads() {
+  const list = $("download-list");
+  list.replaceChildren();
+  for (const group of downloadGroups) {
+    const state = modelDownloadJobs.get(group.id);
+    const active = state && ["starting", "queued", "running"].includes(state.status);
+    const row = uiElement("div", "download-item");
+    const top = uiElement("div", "download-item-top");
+    const copy = uiElement("div", "download-copy");
+    const title = uiElement("strong", "", group.label || group.id);
+    const badge = uiElement("span", "model-state" + (group.downloaded ? " ready" : ""), group.downloaded ? "取得済み" : active ? "取得中" : "未取得");
+    copy.append(title, badge);
+    const details = [];
+    if (group.description) details.push(group.description);
+    if (group.download_mb) details.push(`容量の目安：約${group.download_mb >= 1000 ? (group.download_mb / 1000).toFixed(1) + " GB" : group.download_mb + " MB"}`);
+    if (details.length) copy.append(uiElement("p", "download-description", details.join(" · ")));
+    const requirements = group.requirements;
+    if (requirements && (!Array.isArray(requirements) || requirements.length)) {
+      const text = Array.isArray(requirements) ? requirements.join("\n") : String(requirements);
+      copy.append(uiElement("p", "download-requirements", `動作環境：${text}`));
+    }
+    const instruction = group.instructions || group.instruction;
+    if (instruction) copy.append(uiElement("p", "download-instructions", Array.isArray(instruction) ? instruction.join("\n") : String(instruction)));
+    const actions = uiElement("div", "download-actions");
+    if (group.source_url && /^https?:\/\//.test(group.source_url)) {
+      const link = uiElement("a", "", "配布元 ↗");
+      link.href = group.source_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+      actions.append(link);
+    }
+    const button = uiElement("button", "btn" + (!group.downloaded && group.downloadable !== false ? " btn-primary" : ""),
+      group.downloaded ? "取得済み" : active ? "取得中…" : group.downloadable === false ? "配布元を確認" : state?.status === "error" ? "再試行" : "ダウンロード");
+    button.type = "button";
+    button.disabled = !!group.downloaded || !!active || group.downloadable === false;
+    button.addEventListener("click", () => startModelDownload(group.id));
+    actions.append(button);
+    top.append(copy, actions); row.append(top);
+    if (active) {
+      const progress = document.createElement("progress");
+      progress.className = "download-progress"; progress.max = 100;
+      if (state.progress !== null && state.progress !== undefined && Number.isFinite(Number(state.progress))) progress.value = Math.max(0, Math.min(100, Number(state.progress)));
+      progress.setAttribute("aria-label", `${group.label || group.id}の取得進捗`);
+      row.append(progress);
+    }
+    const message = state?.error || state?.message;
+    if (message) {
+      const status = uiElement("p", "download-message" + (state.status === "error" ? " error" : ""), String(message));
+      status.setAttribute("role", "status"); row.append(status);
+    }
+    list.append(row);
+  }
+}
+
+async function refreshModelDownloads() {
+  try {
+    const response = await fetch("/api/model-downloads", { cache: "no-store" });
+    if (!response.ok) throw await responseError(response, "モデルの取得状況を確認できません");
+    const data = await response.json();
+    if (!Array.isArray(data.groups)) throw new Error("モデル一覧の形式が正しくありません");
+    downloadGroups = data.groups;
+    $("download-list-status").textContent = data.groups.length ? "必要なモデルだけをダウンロードできます。" : "モデル一覧がありません。";
+    renderModelDownloads();
+  } catch (error) {
+    $("download-list-status").textContent = `モデル一覧を取得できません：${error.message}`;
+  }
+}
+
+async function startModelDownload(id) {
+  if (["starting", "queued", "running"].includes(modelDownloadJobs.get(id)?.status)) return;
+  modelDownloadJobs.set(id, { status: "starting", message: "ダウンロードを準備中…" });
+  renderModelDownloads();
+  try {
+    const response = await fetch(`/api/model-downloads/${encodeURIComponent(id)}`, { method: "POST" });
+    if (!response.ok) throw await responseError(response, "ダウンロードを開始できません");
+    const job = await response.json();
+    if (!job.job_id) throw new Error("ダウンロードの受付情報を取得できませんでした");
+    while (true) {
+      const progressResponse = await fetch(`/api/model-downloads/jobs/${encodeURIComponent(job.job_id)}`, { cache: "no-store" });
+      if (!progressResponse.ok) throw await responseError(progressResponse, "進捗を取得できません");
+      const state = await progressResponse.json();
+      modelDownloadJobs.set(id, state);
+      renderModelDownloads();
+      if (["done", "completed"].includes(state.status)) {
+        await Promise.all([refreshModelDownloads(), refreshModelCatalog()]);
+        return;
+      }
+      if (["error", "failed"].includes(state.status)) throw new Error(state.error || state.message || "ダウンロードに失敗しました");
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  } catch (error) {
+    modelDownloadJobs.set(id, { status: "error", error: error.message });
+    await refreshModelDownloads();
+  }
 }
 
 function separationOptions() {
@@ -267,8 +376,11 @@ $("release-models").addEventListener("click", async () => {
     flashInfo("分離モデルのメモリを解放しました。次回使用時に読み込みます。");
   } catch (error) { showError(error.message); await refreshModelCatalog(); }
 });
+$("refresh-downloads").addEventListener("click", refreshModelDownloads);
+$("model-manager").addEventListener("toggle", () => { if ($("model-manager").open) refreshModelDownloads(); });
 $("retry-job").addEventListener("click", () => { if (lastSubmittedFile) startJob(lastSubmittedFile); });
 const modelCatalogReady = refreshModelCatalog();
+refreshModelDownloads();
 renderRecentJobs();
 
 // ---------- 状態 ----------
@@ -1598,7 +1710,8 @@ async function doDenoise(scope, strength) {
 // ---------- 修復・エフェクト ----------
 const REPAIR_NOTES = {
   declick: "短いインパルス性ノイズ (マウスクリック音・リップノイズ・プチ音) を検出して補間します",
-  dereverb: "AIモデル (MelBand Roformer, SDR 19.17) で響き・残響を除去します。初回はモデルのダウンロード (約800MB) に時間がかかります",
+  dereverb: "AIモデル (MelBand Roformer, SDR 19.17) で響き・残響を除去します。利用前に「AIモデルの管理」からモデルを取得してください。",
+  nemotron_reuse: "声のノイズ・残響などを抑えます。主話者以外の声を抑える場合があります。選択範囲をモノラルとして処理します。利用前に「AIモデルの管理」からモデルを取得してください。",
   dehum: "電源由来のブーンというノイズ (50/60Hzと倍音) をノッチフィルタで除去します",
   fadein: "選択範囲の音量を 0 から徐々に上げます",
   fadeout: "選択範囲の音量を徐々に 0 へ下げます",
@@ -1765,7 +1878,7 @@ async function applyRepair() {
   if (activeTrackIdx < 0) { showError("対象トラックの波形をドラッグして選択してください"); return; }
   if (editorBusy) return;
 
-  const mix = parseFloat($("rp-mix").value);
+  const mix = effect === "nemotron_reuse" ? 1 : parseFloat($("rp-mix").value);
   const track = tracks[activeTrackIdx];
   const [s, e] = se;
   if (isPlaying) pause();
@@ -1796,9 +1909,7 @@ async function applyRepair() {
     form.append("sensitivity", $("rp-sensitivity").value);
     form.append("base_freq", $("rp-humfreq").value);
 
-    flashInfo(effect === "dereverb"
-      ? "リバーブ除去中... (初回はモデルのダウンロードで数分かかることがあります)"
-      : "処理中...");
+    flashInfo(effect === "dereverb" ? "リバーブ除去中..." : "処理中...");
     const res = await fetch("/api/effect", { method: "POST", body: form });
     if (!res.ok) {
       const detail = await res.json().catch(() => ({}));
@@ -1834,6 +1945,7 @@ let subsepTrack = null;
 let subsepBusy = false;
 
 function openSubsepPanel(track) {
+  if (editorBusy) return;
   subsepTrack = track;
   $("ss-track-label").textContent = `「${track.label}」`;
   // トラック名から種類を推定
@@ -1846,7 +1958,7 @@ function openSubsepPanel(track) {
 }
 
 async function runSubsep() {
-  if (subsepBusy || !subsepTrack || !tracks.includes(subsepTrack)) return;
+  if (editorBusy || subsepBusy || !subsepTrack || !tracks.includes(subsepTrack)) return;
   const src = subsepTrack;
   const kind = $("ss-kind").value;
   subsepBusy = true;
@@ -1857,7 +1969,7 @@ async function runSubsep() {
     form.append("file", new Blob([encodeWav(src.chans, sampleRate)], { type: "audio/wav" }), "track.wav");
     form.append("kind", kind);
     const res = await fetch("/api/subseparate", { method: "POST", body: form });
-    if (!res.ok) throw new Error("分離の開始に失敗しました (" + res.status + ")");
+    if (!res.ok) throw await responseError(res, "分離の開始に失敗しました");
     const { id } = await res.json();
 
     let job;
@@ -1903,6 +2015,109 @@ async function runSubsep() {
   } finally {
     subsepBusy = false;
     $("ss-run").disabled = false;
+  }
+}
+
+// ---------- 話者ごとの単独発話と重なり区間 ----------
+let speakerStemsBusy = false;
+let speakerStemsSources = [];
+
+function openSpeakerStemsPanel() {
+  if (editorBusy || speakerStemsBusy) return;
+  const selector = $("sp-track");
+  selector.replaceChildren();
+  speakerStemsSources = [...tracks];
+  speakerStemsSources.forEach((track, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = track.isOriginal ? `${track.label}（元音源）` : track.label;
+    selector.append(option);
+  });
+  // 選択中のトラック、次に話し声トラックを候補にする。
+  const preferred = activeTrackIdx >= 0 ? activeTrackIdx : tracks.findIndex((t) =>
+    t.name === "dialog" || t.name === "vocals" || /話し声|ボーカル|声/.test(t.label));
+  if (preferred >= 0) selector.value = String(preferred);
+  $("sp-status").textContent = "";
+  togglePanel("panel-speaker-stems");
+}
+
+async function runSpeakerStems() {
+  if (speakerStemsBusy || editorBusy || subsepBusy || dialogueBusy || midiBusy) return;
+  const src = speakerStemsSources[Number.parseInt($("sp-track").value, 10)];
+  if (!src || !tracks.includes(src)) { showError("対象トラックが見つかりません。パネルを開き直してください"); return; }
+  if (isPlaying) pause();
+  speakerStemsBusy = true;
+  editorBusy = true;
+  $("sp-run").disabled = true;
+  $("sp-track").disabled = true;
+  updateToolbar();
+  try {
+    $("sp-status").textContent = "音声を準備中...";
+    const form = new FormData();
+    form.append("file", new Blob([encodeWav(src.chans, sampleRate)], { type: "audio/wav" }), "track.wav");
+    const res = await fetch("/api/speaker-stems", { method: "POST", body: form });
+    if (!res.ok) throw await responseError(res, "話者区間の解析を開始できませんでした");
+    const { id } = await res.json();
+    let job;
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const response = await fetch("/api/jobs/" + id);
+      if (!response.ok) throw await responseError(response, "ジョブ情報を取得できませんでした");
+      job = await response.json();
+      if (job.status === "error") throw new Error(job.message || "話者区間の解析に失敗しました");
+      if (job.status === "done") break;
+      $("sp-status").textContent = `${job.message || "話者を解析中..."} (${Math.round(job.progress || 0)}%)`;
+    }
+    if (!Array.isArray(job.stems) || !job.stems.length) throw new Error("出力トラックがありません");
+    $("sp-status").textContent = "トラックを読み込み中...";
+    const buffers = await Promise.all(job.stems.map(async (stem) => {
+      const response = await fetch(stem.url);
+      if (!response.ok) throw new Error(`${stem.label} の読み込みに失敗しました`);
+      return audioCtx.decodeAudioData(await response.arrayBuffer());
+    }));
+    if (!tracks.includes(src)) throw new Error("対象トラックが見つかりません");
+    if (buffers.some((buffer) => buffer.length !== src.chans[0].length)) {
+      throw new Error("出力トラックの長さが元音源と一致しません");
+    }
+
+    // すべて読み込めた後に一括で追加。元トラックと試聴音量を揃える。
+    let insertAt = tracks.indexOf(src) + 1;
+    job.stems.forEach((spec, i) => {
+      const track = makeTrack(
+        { name: spec.name, label: spec.label, color: spec.color, defaultMuted: false, isOriginal: false, custom: true },
+        buffers[i]
+      );
+      track.volumeDb = src.volumeDb;
+      track.volume = src.volume;
+      track.volSlider.value = clamp(track.volumeDb, -36, 12);
+      track.volNum.value = track.volumeDb;
+      track.solo = src.solo;
+      tracksEl.insertBefore(track.el, tracks[insertAt] ? tracks[insertAt].el : null);
+      tracks.splice(insertAt, 0, track);
+      insertAt++;
+    });
+    src.solo = false;
+    src.muted = true;
+    applyGains();
+    undoStack = [];
+    redoStack = [];
+    clearSelection();
+    setActiveTrack(tracks.indexOf(src));
+    refreshAll();
+    updateZipBtn();
+    const warnings = Array.isArray(job.warnings) ? job.warnings.filter((warning) => typeof warning === "string") : [];
+    const message = `${src.label} を ${job.stems.length}トラックに分けました。元トラックはミュート、取り消し履歴はリセットされました。`;
+    $("sp-status").textContent = [message, ...warnings].join(" ");
+    flashInfo(warnings.length ? `${message} ${warnings.join(" ")}` : message);
+  } catch (err) {
+    $("sp-status").textContent = err.message;
+    showError(err.message);
+  } finally {
+    speakerStemsBusy = false;
+    editorBusy = false;
+    $("sp-run").disabled = false;
+    $("sp-track").disabled = false;
+    updateToolbar();
   }
 }
 
@@ -1961,6 +2176,7 @@ async function runMidiExport() {
 let dialogueBusy = false;
 let dialogueSegments = []; // 編集可能なセグメント一覧
 let dialogueTrackIdx = -1;
+let dialogueSpeakersEnabled = false;
 
 function openDialoguePanel() {
   // 対象トラックの選択肢を構築 (話し声/ボーカルがあれば初期選択)
@@ -2009,6 +2225,7 @@ async function runDialogueAnalyze() {
   if (!track) { showError("対象トラックを選択してください"); return; }
 
   dialogueBusy = true;
+  const requestDiarize = $("dg-diarize").checked;
   $("dg-run").disabled = true;
   $("dg-result").classList.add("hidden");
   try {
@@ -2018,15 +2235,17 @@ async function runDialogueAnalyze() {
       auto_adjust: $("dg-adjust").checked,
       min_len: $("dg-min").value,
       max_len: $("dg-max").value,
-      diarize: $("dg-diarize").checked,
+      diarize: requestDiarize,
+      diarization_model: $("dg-diarization-model").value,
       num_speakers: $("dg-spknum").value,
     });
     const res = await fetch("/api/dialogue-export", { method: "POST", body: form });
-    if (!res.ok) throw new Error("解析の開始に失敗しました (" + res.status + ")");
+    if (!res.ok) throw await responseError(res, "解析の開始に失敗しました");
     const { id } = await res.json();
     const job = await pollDialogueJob(id);
 
     dialogueSegments = job.segments.map((s) => ({ start: s.start, end: s.end, text: s.text, speaker: s.speaker || "" }));
+    dialogueSpeakersEnabled = requestDiarize;
     dialogueTrackIdx = trackIdx;
     renderDialogueList(job.language);
     $("dg-result").classList.remove("hidden");
@@ -2051,13 +2270,13 @@ function renderDialogueList(language) {
 
   const list = $("dg-segments");
   list.innerHTML = "";
-  const hasSpeakers = dialogueSegments.some((s) => s.speaker);
+  const hasSpeakers = dialogueSpeakersEnabled || dialogueSegments.some((s) => s.speaker);
   dialogueSegments.forEach((seg, i) => {
     const dur = seg.end - seg.start;
     const row = document.createElement("div");
     row.className = "dg-seg" + ($("dg-adjust").checked && (dur < minL || dur > maxL) ? " dg-warn" : "");
     const spkHtml = hasSpeakers
-      ? `<select class="dg-spk" title="話者 (間違っていたらここで修正)">${Object.keys(SPEAKER_COLORS).map((n) => `<option value="${n}"${n === seg.speaker ? " selected" : ""}>${n}</option>`).join("")}</select>`
+      ? `<select class="dg-spk" title="話者 (間違っていたらここで修正)"><option value=""${!seg.speaker ? " selected" : ""}>未判定</option>${Object.keys(SPEAKER_COLORS).map((n) => `<option value="${n}"${n === seg.speaker ? " selected" : ""}>${n}</option>`).join("")}</select>`
       : "";
     row.innerHTML =
       `<button class="dg-play" title="この位置へジャンプ+範囲選択">▶</button>` +
@@ -2153,6 +2372,10 @@ function updateToolbar() {
   $("tool-silence-cut").disabled = editorBusy;
   $("tool-denoise").disabled = editorBusy;
   $("tool-repair").disabled = editorBusy;
+  $("tool-speaker-stems").disabled = editorBusy;
+  $("tool-dialogue").disabled = editorBusy;
+  $("tool-midi").disabled = editorBusy;
+  $("new-btn").disabled = editorBusy;
   $("tool-addtrack").disabled = editorBusy;
   $("tool-undo").disabled = !undoStack.length || editorBusy;
   $("tool-redo").disabled = !redoStack.length || editorBusy;
@@ -2254,7 +2477,7 @@ $("overview").addEventListener("mousedown", (e) => {
 });
 
 function togglePanel(id) {
-  ["panel-silence-cut", "panel-denoise", "panel-repair", "panel-dialogue", "panel-guide", "panel-subsep", "panel-midi"].forEach((p) => {
+  ["panel-silence-cut", "panel-denoise", "panel-repair", "panel-dialogue", "panel-guide", "panel-subsep", "panel-midi", "panel-speaker-stems"].forEach((p) => {
     if (p === id) $(p).classList.toggle("hidden");
     else $(p).classList.add("hidden");
   });
@@ -2269,8 +2492,8 @@ $("md-sens").addEventListener("input", (e) => {
 });
 $("ss-kind").addEventListener("change", () => {
   $("ss-note").textContent = $("ss-kind").value === "drums"
-    ? "ドラム系のトラックに使ってください。元のトラックは残ります (ミュートされます)。初回はモデルのダウンロードがあります (約170MB)"
-    : "ボーカル・話し声系のトラックに使ってください。リードボーカルとバックコーラス・ハモリに分かれます。初回はモデルのダウンロードがあります (約900MB)";
+    ? "ドラム系のトラックに使ってください。元のトラックは残ります (ミュートされます)。実行前に「AIモデルの管理」からドラム細分化モデルを取得してください。"
+    : "ボーカル・話し声系のトラックに使ってください。リードとバックの推定結果を出力します。混入や取り違えが生じる場合があります。実行前に「AIモデルの管理」からモデルを取得してください。";
 });
 document.querySelectorAll(".guide-open").forEach((b) =>
   b.addEventListener("click", () => {
@@ -2283,6 +2506,8 @@ $("tool-silence-cut").addEventListener("click", () => togglePanel("panel-silence
 $("tool-denoise").addEventListener("click", () => togglePanel("panel-denoise"));
 $("tool-repair").addEventListener("click", () => togglePanel("panel-repair"));
 $("tool-dialogue").addEventListener("click", openDialoguePanel);
+$("tool-speaker-stems").addEventListener("click", openSpeakerStemsPanel);
+$("sp-run").addEventListener("click", runSpeakerStems);
 $("dg-run").addEventListener("click", runDialogueAnalyze);
 $("dg-export").addEventListener("click", runDialogueExportFiles);
 $("tool-addtrack").addEventListener("click", addTrack);
@@ -2298,9 +2523,15 @@ $("rp-effect").addEventListener("change", () => {
   $("rp-tempo-row").classList.toggle("hidden", v !== "tempo");
   $("rp-note").textContent = REPAIR_NOTES[v] || "";
 });
-$("dg-diarize").addEventListener("change", () => {
-  $("dg-spk-row").classList.toggle("hidden", !$("dg-diarize").checked);
-});
+function updateDiarizationOptions() {
+  const enabled = $("dg-diarize").checked;
+  const nemotron = $("dg-diarization-model").value === "nemotron";
+  $("dg-diarization-model-row").classList.toggle("hidden", !enabled);
+  $("dg-spk-row").classList.toggle("hidden", !enabled || nemotron);
+  $("dg-nemotron-note").classList.toggle("hidden", !enabled || !nemotron);
+}
+$("dg-diarize").addEventListener("change", updateDiarizationOptions);
+$("dg-diarization-model").addEventListener("change", updateDiarizationOptions);
 $("rp-platform").addEventListener("change", () => {
   const custom = $("rp-platform").value === "custom";
   $("rp-lufs-row").classList.toggle("hidden", !custom);

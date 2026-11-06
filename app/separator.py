@@ -29,7 +29,6 @@ MODELS_DIR = os.path.join(BASE_DIR, "models")
 sys.path.insert(0, MSST_DIR)
 
 from demucs.apply import apply_model  # noqa: E402
-from demucs.pretrained import get_model as demucs_get_model  # noqa: E402
 from demucs.states import load_model as demucs_load_model  # noqa: E402
 
 import utils.model_utils as msst_model_utils  # noqa: E402  (MSST)
@@ -115,13 +114,13 @@ MEGA_STEMS = [_stem(name, label, ("#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#
 DEFAULT_MODELS = {"dme": "bandit", "music": "bs_roformer", "vocals": "bs_roformer", "mega": "mega_53"}
 MODEL_CATALOG = [
     {"id": "bandit", "label": "BandIt Plus", "modes": ["dme"], "description": "映像の話し声・効果音・BGMをステレオで分離。", "stems": DME_STEMS,
-     "download_mb": 149, "vram_gb": 4, "channels": "stereo", "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training", "notes": "高品質はCDX23とのアンサンブル（追加ダウンロード約162MB）。", "_spec": BANDIT_CKPT},
+     "download_mb": 149, "channels": "stereo", "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training", "notes": "高品質はCDX23とのアンサンブル（追加取得約162MB）。", "_spec": BANDIT_CKPT},
     {"id": "dbs_dnr", "label": "DBS-TIGER DnR", "modes": ["dme"], "description": "入力に応じた帯域分割による、軽量な映像3分離。", "stems": DME_STEMS,
-     "download_mb": 5, "vram_gb": 1, "channels": "mono", "source_url": "https://github.com/JusperLee/Dynamic-Band-Splitting", "notes": "研究モデル。出力はモノラルで、左右の定位は保持されません。"},
+     "download_mb": 5, "channels": "mono", "source_url": "https://github.com/JusperLee/Dynamic-Band-Splitting", "notes": "研究モデル。出力はモノラルで、左右の定位は保持されません。"},
     {"id": "bs_roformer", "label": "BS-RoFormer · viperx", "modes": ["music", "vocals"], "description": "ボーカル分離。6ステムではDemucsによる楽器分離も実行。", "stems": VOCAL_STEMS,
-     "download_mb": 640, "vram_gb": 6, "channels": "stereo", "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/docs/pretrained_models.md", "notes": "6ステム時はhtdemucs_6sも初回取得（約55MB）。", "_spec": BSROFORMER_CKPT},
+     "download_mb": 640, "channels": "stereo", "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/docs/pretrained_models.md", "notes": "6ステム時はhtdemucs_6sも取得してください（約55MB）。", "_spec": BSROFORMER_CKPT},
     {"id": "mel_band_roformer", "label": "MelBand RoFormer · Kimberley Jensen", "modes": ["music", "vocals"], "description": "メル帯域を使うボーカル分離。BS-RoFormerと聴き比べる候補。", "stems": VOCAL_STEMS,
-     "download_mb": 913, "vram_gb": 6, "channels": "stereo", "source_url": "https://github.com/KimberleyJensen/Mel-Band-Roformer-Vocal-Model", "notes": "モデル間の優劣は音源によります。6ステム時はhtdemucs_6sを併用。", "_spec": MELROFORMER_CKPT},
+     "download_mb": 913, "channels": "stereo", "source_url": "https://github.com/KimberleyJensen/Mel-Band-Roformer-Vocal-Model", "notes": "モデル間の優劣は音源によります。6ステム時はhtdemucs_6sを併用。", "_spec": MELROFORMER_CKPT},
     {"id": "mega_53", "label": "MVSep Mega · 53カテゴリ", "modes": ["mega"], "description": "弦・管・鍵盤・シンセなど53カテゴリから選択して抽出。", "stems": MEGA_STEMS,
      "download_mb": 1369, "vram_gb": 16, "channels": "stereo", "source_url": "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.21", "notes": "カテゴリは重複します。全ステムを加算しても元音源には戻りません。個別の専用モデルが高精度な場合があります。", "_spec": MEGA_CKPT},
 ]
@@ -172,7 +171,7 @@ class _CallbackPbar:
 msst_model_utils.tqdm = _CallbackPbar
 
 
-def _download(url, filename, progress_cb=None, label="", sha256=None):
+def _download(url, filename, progress_cb=None, label="", sha256=None, allow_download=False):
     """取得途中のファイルをモデルとして扱わず、成功時のみ置き換える。"""
     os.makedirs(MODELS_DIR, exist_ok=True)
     path = os.path.join(MODELS_DIR, filename)
@@ -185,6 +184,8 @@ def _download(url, filename, progress_cb=None, label="", sha256=None):
             if digest.hexdigest() != sha256:
                 raise RuntimeError(f"モデルのチェックサムが一致しません。{filename} を確認してください")
         return path
+    if not allow_download:
+        raise RuntimeError(f"{label or filename} が未取得です。『モデル管理』から必要なモデルをダウンロードしてください")
     temporary = path + "." + uuid.uuid4().hex + ".partial"
     try:
         if progress_cb:
@@ -259,14 +260,15 @@ class Engine:
 
     def model_catalog(self):
         cached = self._cache.copy()
+        from model_downloads import catalog
+        availability = {entry["id"]: entry["downloaded"] for entry in catalog()}
         result = []
         for entry in MODEL_CATALOG:
             item = {key: copy.deepcopy(value) for key, value in entry.items() if not key.startswith("_")}
             item["notes"] = [item["notes"]] if isinstance(item["notes"], str) else item["notes"]
             spec = entry.get("_spec")
             if spec:
-                path = os.path.join(MODELS_DIR, spec["file"])
-                item["downloaded"] = os.path.isfile(path) and os.path.getsize(path) > 0
+                item["downloaded"] = availability.get(entry["id"], False)
                 item["cached"] = spec["file"] in cached
             else:
                 from dbs_adapter import downloaded
@@ -352,8 +354,12 @@ class Engine:
         self._activate("htdemucs_6s")
         if "htdemucs_6s" not in self._cache:
             if progress_cb:
-                progress_cb(0, "モデルをダウンロード中 (htdemucs_6s)...")
-            model = demucs_get_model("htdemucs_6s")
+                progress_cb(0, "モデルを読み込み中 (htdemucs_6s)...")
+            from model_downloads import htdemucs_path
+            path = htdemucs_path()
+            if path is None:
+                raise RuntimeError("htdemucs_6s が未取得です。『モデル管理』からダウンロードしてください")
+            model = _load_demucs_checkpoint(str(path))
             model.to(self.device).eval()
             self._cache["htdemucs_6s"] = model
         return self._cache["htdemucs_6s"]

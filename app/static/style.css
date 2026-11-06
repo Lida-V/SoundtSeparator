@@ -99,6 +99,29 @@ main { max-width: 1060px; margin: 26px auto 40px; padding: 0 20px; }
 
 .hidden { display: none !important; }
 
+/* ---- 明示的なモデル取得 ---- */
+.model-manager { margin-bottom: 16px; padding: 16px 20px; }
+.model-manager summary { cursor: pointer; font-weight: 600; font-size: 0.86rem; }
+.model-manager summary small { color: var(--text-dim); font-size: 0.7rem; font-weight: 400; margin-left: 12px; }
+.model-manager[open] summary { margin-bottom: 12px; }
+.download-list { display: grid; gap: 9px; margin: 13px 0; }
+.download-item { border: 1px solid var(--card-border); background: #080c1644; border-radius: 10px; padding: 13px 14px; }
+.download-item-top { display: flex; align-items: flex-start; gap: 12px; }
+.download-copy { flex: 1; min-width: 0; }
+.download-copy strong { font-size: 0.8rem; font-weight: 600; }
+.download-copy .model-state { margin-left: 8px; }
+.download-description, .download-instructions { color: #a9b8ca; font-size: 0.72rem; line-height: 1.7; margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.download-requirements { color: #c5d8e4; font-size: 0.72rem; line-height: 1.7; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.download-instructions { color: #d0bf94; }
+.download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.download-actions .btn { padding: 6px 11px; font-size: 0.7rem; white-space: nowrap; }
+.download-actions a { color: #8cc5df; text-decoration: none; font-size: 0.7rem; white-space: nowrap; }
+.download-actions a:hover { text-decoration: underline; }
+.download-progress { width: 100%; height: 7px; margin-top: 10px; accent-color: #67c9d4; }
+.download-message { font-size: 0.7rem; color: #a7bbcf; margin-top: 5px; overflow-wrap: anywhere; }
+.download-message.error { color: #ffb3b3; }
+@media (max-width: 640px) { .model-manager summary small { display: block; margin: 4px 0 0 17px; } .download-item-top { flex-direction: column; } }
+
 /* ---- 分離ワークスペース ---- */
 .studio-intro { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding-bottom: 25px; margin-bottom: 25px; border-bottom: 1px solid var(--card-border); }
 .eyebrow { color: #64c5d7; font-size: 0.62rem; letter-spacing: 0.16em; font-weight: 700; margin-bottom: 8px; }

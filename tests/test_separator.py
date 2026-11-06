@@ -123,7 +123,7 @@ class DownloadTests(unittest.TestCase):
         response.headers = {"Content-Length": str(len(payload))}
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory, patch.object(sep, "MODELS_DIR", directory), \
                 patch("urllib.request.urlopen", return_value=response):
-            path = sep._download("https://example.com/model", "model.ckpt", sha256=hashlib.sha256(payload).hexdigest())
+            path = sep._download("https://example.com/model", "model.ckpt", sha256=hashlib.sha256(payload).hexdigest(), allow_download=True)
             self.assertEqual(Path(path).read_bytes(), payload)
             self.assertEqual([item.name for item in Path(directory).iterdir()], ["model.ckpt"])
 
@@ -134,7 +134,7 @@ class DownloadTests(unittest.TestCase):
             with self.subTest(length=length), tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory, \
                     patch.object(sep, "MODELS_DIR", directory), patch("urllib.request.urlopen", return_value=response):
                 with self.assertRaises(RuntimeError):
-                    sep._download("https://example.com/model", "model.ckpt", sha256=digest)
+                    sep._download("https://example.com/model", "model.ckpt", sha256=digest, allow_download=True)
                 self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_existing_corrupt_file_is_not_overwritten(self):
@@ -145,6 +145,13 @@ class DownloadTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 sep._download("https://example.com/model", "model.ckpt", sha256="0" * 64)
             self.assertEqual(target.read_bytes(), b"existing")
+            network.assert_not_called()
+
+    def test_inference_never_downloads_missing_model(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as directory, patch.object(sep, "MODELS_DIR", directory), \
+                patch("urllib.request.urlopen") as network:
+            with self.assertRaisesRegex(RuntimeError, "モデル管理"):
+                sep._download("https://example.com/model", "model.ckpt")
             network.assert_not_called()
 
 

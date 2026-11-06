@@ -45,7 +45,7 @@ def downloaded() -> bool:
     )
 
 
-def _checked_file(spec, progress_cb=None):
+def _checked_file(spec, progress_cb=None, allow_download=False):
     """固定配布元から一時ファイルへ取得し、SHA-256 検証後だけ公開する。"""
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     target = MODELS_DIR / spec["file"]
@@ -54,6 +54,8 @@ def _checked_file(spec, progress_cb=None):
         if target.stat().st_size == spec["size"] and digest == spec["sha256"]:
             return target
         raise RuntimeError(f"DBS モデルが破損しています。{target.name} を確認してください")
+    if not allow_download:
+        raise RuntimeError("DBS-TIGER DnR が未取得です。『モデル管理』からダウンロードしてください")
     temporary = target.with_name(target.name + "." + uuid.uuid4().hex[:8] + ".partial")
     try:
         if progress_cb:
