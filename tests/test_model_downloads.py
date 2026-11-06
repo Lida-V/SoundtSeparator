@@ -62,6 +62,10 @@ class DownloadManagerTests(unittest.TestCase):
         self.assertIn("未確定", groups["nemotron_diarization"]["gpu_guidance"])
         self.assertIn("GPUは不要", groups["basic_pitch"]["gpu_guidance"])
         self.assertEqual(groups["bandit"]["requirements"][0], groups["bandit"]["gpu_guidance"])
+        self.assertEqual(groups["bandit"]["gpu_summary"], "推奨VRAM：6 GB以上（暫定）")
+        self.assertEqual(groups["mega_53"]["gpu_summary"], "推奨VRAM：16 GB以上（公式推奨）")
+        self.assertIn("未確定", groups["nemotron_diarization"]["gpu_summary"])
+        self.assertIn("GPU不要", groups["basic_pitch"]["gpu_summary"])
 
 
 if __name__ == "__main__":

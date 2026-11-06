@@ -86,7 +86,7 @@ function renderModelDetails() {
   if (!model) return;
   const facts = uiElement("div", "model-facts");
   if (model.download_mb) facts.append(uiElement("span", "", `取得容量 約${model.download_mb >= 1000 ? (model.download_mb / 1000).toFixed(1) + " GB" : model.download_mb + " MB"}`));
-  if (model.vram_gb && !model.gpu_guidance) facts.append(uiElement("span", "", `VRAM目安 ${model.vram_gb} GB以上`));
+  if (model.vram_gb && !model.gpu_summary) facts.append(uiElement("span", "", `VRAM目安 ${model.vram_gb} GB以上`));
   facts.append(uiElement("span", "", model.cached ? "メモリに読み込み済み" : "使用時に読み込み"));
   if (model.source_url && /^https?:\/\//.test(model.source_url)) {
     const link = uiElement("a", "model-source", "配布元 ↗");
@@ -94,12 +94,7 @@ function renderModelDetails() {
     facts.append(link);
   }
   detail.append(facts);
-  if (model.gpu_guidance) detail.append(uiElement("p", "settings-note", model.gpu_guidance));
-  if (model.gpu_reference) {
-    const note = model.gpu_reference.includes("旧案内") ? "旧案内は保証値ではありません。" : "";
-    const measurement = model.gpu_reference.includes("実測") ? "実測は特定条件のPyTorch使用量です。" : "";
-    detail.append(uiElement("p", "settings-note", `VRAM参考：${model.gpu_reference} ${note} ${measurement}`));
-  }
+  if (model.gpu_summary) detail.append(uiElement("p", "settings-note", model.gpu_summary));
   if (!model.downloaded) {
     const help = uiElement("button", "text-button", "利用前にモデルを取得する ↑");
     help.type = "button";
@@ -204,11 +199,7 @@ function renderModelDownloads() {
     if (group.description) details.push(group.description);
     if (group.download_mb) details.push(`容量の目安：約${group.download_mb >= 1000 ? (group.download_mb / 1000).toFixed(1) + " GB" : group.download_mb + " MB"}`);
     if (details.length) copy.append(uiElement("p", "download-description", details.join(" · ")));
-    const requirements = group.requirements;
-    if (requirements && (!Array.isArray(requirements) || requirements.length)) {
-      const text = Array.isArray(requirements) ? requirements.join("\n") : String(requirements);
-      copy.append(uiElement("p", "download-requirements", `動作環境：${text}`));
-    }
+    if (group.gpu_summary) copy.append(uiElement("p", "download-requirements", group.gpu_summary));
     const instruction = group.instructions || group.instruction;
     if (instruction) copy.append(uiElement("p", "download-instructions", Array.isArray(instruction) ? instruction.join("\n") : String(instruction)));
     const actions = uiElement("div", "download-actions");
