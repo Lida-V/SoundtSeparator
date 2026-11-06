@@ -1,0 +1,80 @@
+{
+  "description": "取得済みモデルを使った単一プロセスのVRAM実測。最低要件や推奨値ではありません。",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "os": "Windows",
+  "measurement": {
+    "peak_allocated_mib": "torch.cuda.max_memory_allocated() / 1024**2。PyTorchのテンソル割当量のピーク。",
+    "peak_reserved_gib": "torch.cuda.max_memory_reserved() / 1024**3。PyTorchのメモリアロケータが予約した量のピーク。",
+    "limitations": "CUDAコンテキストやドライバ、他のGPUアプリの使用量は含まれません。入力の長さ、区間の重なり、出力カテゴリ数、品質、CUDA・PyTorchの版、同時に動くモデルで増減します。"
+  },
+  "measurements": [
+    {
+      "date": "2026-10-26",
+      "model": "BandIt Plus",
+      "mode": "dme",
+      "quality": "fast",
+      "input": "44.1kHz stereo, 8-second synthetic signal",
+      "peak_allocated_mib": 833.1,
+      "source": "実機の旧検証スクリプトによる記録。モデルを解放し、ピーク統計をリセットして推論。"
+    },
+    {
+      "date": "2026-10-26",
+      "model": "BS-RoFormer viperx",
+      "mode": "vocals",
+      "quality": "fast",
+      "input": "44.1kHz stereo, 8-second synthetic signal",
+      "peak_allocated_mib": 1594.1,
+      "source": "実機の旧検証スクリプトによる記録。モデルを解放し、ピーク統計をリセットして推論。"
+    },
+    {
+      "date": "2026-10-26",
+      "model": "BS-RoFormer + HTDemucs 6s",
+      "mode": "music",
+      "quality": "fast",
+      "input": "44.1kHz stereo, 8-second synthetic signal",
+      "peak_allocated_mib": 1598.4,
+      "source": "実機の旧検証スクリプトによる記録。モデルを解放し、ピーク統計をリセットして推論。"
+    },
+    {
+      "date": "2026-10-26",
+      "model": "MVSep Mega 53 v1",
+      "mode": "mega",
+      "quality": "fast",
+      "selected_stems": ["acoustic-guitar", "piano"],
+      "input": "44.1kHz stereo, 8-second synthetic signal",
+      "peak_allocated_mib": 3911.6,
+      "source": "実機の旧検証スクリプトによる記録。2カテゴリの実測で、全53カテゴリの値ではありません。"
+    },
+    {
+      "date": "2026-10-26",
+      "model": "DBS-TIGER DnR",
+      "mode": "dme",
+      "quality": "fast",
+      "input": "44.1kHz stereo, 8-second synthetic signal; mono output",
+      "peak_allocated_mib": 1152.4,
+      "source": "実機の旧検証スクリプトによる記録。モデルを解放し、ピーク統計をリセットして推論。"
+    },
+    {
+      "date": "2026-11-05",
+      "model": "NemotronLabs RE-USE",
+      "mode": "speech-enhancement",
+      "quality": "default",
+      "input": "44.1kHz mono, 2-second synthetic signal",
+      "pytorch": "2.6.0+cu124",
+      "peak_allocated_gib": 0.98,
+      "source": "Windows用PyTorch参照実装と実重みを用いた動作確認の報告。予約量は記録なし。"
+    },
+    {
+      "date": "2026-11-06",
+      "model": "DBS-TIGER DnR",
+      "mode": "dme",
+      "quality": "standard",
+      "input": "44.1kHz stereo, 8-second synthetic signal; mono output",
+      "pytorch": "2.6.0+cu124",
+      "peak_allocated_gib": 1.125,
+      "peak_reserved_gib": 1.535,
+      "elapsed_seconds_including_load": 1.212,
+      "source": "docs/benchmarks/bench_vram.py による新規プロセスの実測。"
+    }
+  ]
+}

@@ -84,25 +84,31 @@ RE-USEの聴感品質と、話者分離の正解データに対する精度は�
 
 ### モデル別の動作環境・容量
 
-以下の容量はモデルファイルの概算で、Python環境・一時ファイル・音声の保存領域は含みません。VRAM・RAMは、未公表または未計測のものを下限値として扱っていません。**CPU経路あり**はCUDAが使えない場合にCPUで動作する経路があるという意味であり、全モデル・全環境での速度や動作を保証するものではありません。
+以下の容量はモデルファイルの概算で、Python環境・一時ファイル・音声の保存領域は含みません。GPU欄は、**公式の推奨値・旧案内の目安・実測値を区別**しています。旧案内の目安は以前のREADMEまたはアプリ画面に掲載していた値で、算出条件が記録されていないため、動作保証や最低要件ではありません。実測値も特定条件での値であり、音源・設定・他のアプリによって変動します。
+
+**RTX 4090実測**は、2026年10月26日にWindows・PyTorch 2.6.0+cu124で、44.1kHzステレオの合成音声8秒を「高速」で処理した際の `torch.cuda.max_memory_allocated()` の最大値です。CUDAコンテキストやPyTorch以外の使用量は含まず、必要な総VRAMの値ではありません。DBSの標準品質とRE-USEの実測は表中に別途条件を記載します。**CPU経路あり**はCUDAが使えない場合にCPUで動作する経路があるという意味であり、全モデル・全環境での速度や動作を保証するものではありません。
+
+測定条件と個別の値は[実測記録](docs/benchmarks/vram-rtx4090.json)、再測定の方法は[スクリプト](docs/benchmarks/bench_vram.py)を参照してください。実行前に、ほかのGPUアプリの使用状況を確認してください。
 
 | モデル・用途 | モデル本体の容量目安 | GPU・VRAMの情報 | CPU |
 |---|---:|---|---|
-| BandIt Plus：映像音声3分離 | 約149 MB | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
-| DBS-TIGER DnR：映像音声3分離 | 約5 MB | 最小・推奨VRAM未確認。本環境のRTX 4090で短い合成音声を実行 | CPU経路あり、性能未検証 |
-| BS-RoFormer：歌声抽出 | 約640 MB | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
-| MelBand RoFormer：歌声抽出 | 約913 MB | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
-| HTDemucs 6ステム：楽器分離 | 約55 MB | 最小・推奨VRAM未確認。音楽6ステムには歌声抽出モデルも必要 | CPU経路あり、性能未検証 |
-| MVSep Mega 53 v1：多楽器抽出 | 約1.37 GB | [配布元](https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.21)はVRAM 16 GB以上を推奨 | CPU経路あり、性能未検証 |
-| CDX23：BandIt高品質アンサンブル | 約162 MB | 最小・推奨VRAM未確認。BandIt Plusと併用 | CPU経路あり、性能未検証 |
-| DrumSep：ドラム細分化 | 約168 MB | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
-| Karaoke MelBand：リード／バック推定 | 約913 MB | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
-| MelBand Dereverb：残響除去 | 約913 MB | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
+| BandIt Plus：映像音声3分離 | 約149 MB | 旧案内：約4 GB。RTX 4090実測：約0.81 GiB割当 | CPU経路あり、性能未検証 |
+| DBS-TIGER DnR：映像音声3分離 | 約5 MB | RTX 4090実測：約1.13 GiB割当・約1.54 GiB予約（8秒・標準品質） | CPU経路あり、性能未検証 |
+| BS-RoFormer：歌声抽出 | 約640 MB | 旧案内：約6 GB。RTX 4090実測：約1.56 GiB割当 | CPU経路あり、性能未検証 |
+| MelBand RoFormer：歌声抽出 | 約913 MB | 旧案内：約6 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
+| HTDemucs 6ステム：楽器分離 | 約55 MB | 旧案内：音楽6ステムで約6 GB、8 GB推奨。RTX 4090実測：BS-RoFormerとの組合せで約1.56 GiB割当。[Demucs公式](https://github.com/facebookresearch/demucs#memory-requirements-for-gpu-acceleration)は一般的なGPU実行で最小約3 GB・既定設定で約7 GBと案内 | CPU経路あり、性能未検証 |
+| MVSep Mega 53 v1：多楽器抽出 | 約1.37 GB | [配布元](https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.21)はVRAM 16 GB以上を推奨。RTX 4090実測：約3.82 GiB割当（2カテゴリ選択） | CPU経路あり、性能未検証 |
+| CDX23：BandIt高品質アンサンブル | 約162 MB | BandIt Plusと併用。組合せ時の必要VRAMは未検証 | CPU経路あり、性能未検証 |
+| DrumSep：ドラム細分化 | 約168 MB | 旧案内：約4 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
+| Karaoke MelBand：リード／バック推定 | 約913 MB | 旧案内：約6 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
+| MelBand Dereverb：残響除去 | 約913 MB | 旧案内：約6 GB。最小・推奨VRAMは未検証 | CPU経路あり、性能未検証 |
 | Whisper small／medium／large-v3：文字起こし | 約484 MB／1.53 GB／3.09 GB | [公式目安](https://github.com/openai/whisper)：VRAM約2／5／10 GB。実際は条件で変動 | CPU経路あり、性能未検証 |
 | Resemblyzer：話者推定 | ライブラリに同梱 | 最小・推奨VRAM未確認 | CPU経路あり、性能未検証 |
 | Basic Pitch：MIDI採譜 | ライブラリに同梱 | 最小・推奨VRAM未確認 | ONNX RuntimeでCPU処理 |
-| NemotronLabs RE-USE：声の強調 | 約39 MB | [公式](https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE)の対応環境はLinux・NVIDIA Ampere（推論条件としてA100を記載）。本アプリの独自PyTorch実装はWindows・RTX 4090で2秒の合成音声を実行し、出力長と数値を確認 | CPU経路あり、実重みで未検証 |
+| NemotronLabs RE-USE：声の強調 | 約39 MB | [公式](https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE)の対応環境はLinux・NVIDIA Ampere（推論条件としてA100を記載）。本アプリの独自PyTorch実装はRTX 4090で約0.98 GiB割当を実測（合成2秒） | CPU経路あり、実重みで未検証 |
 | Nemotron-3-Diarization：話者分離 | 約397 MB | [公式](https://huggingface.co/nvidia/Nemotron-3-Diarization)はLinux、Ampere・Ada・Hopper・Blackwellを対応環境として記載。最大8話者・16 kHzモノラル。本アプリはWindows・RTX 4090で公式の多話者音声97.6秒に対し、話者の割り当てまで実行 | CPU経路あり、実重みで未検証 |
+
+Demucsの公式値はDemucs単体のCLIに関する案内であり、このアプリの6ステム処理における動作保証値ではありません。
 
 RE-USEの聴感品質、Diarizationの正解音源との話者分離精度はいずれも未評価です。これらのGPU推論の確認は特定環境での結果であり、他環境での動作や品質を保証するものではありません。メモリ不足の場合は、短い範囲で試すか他のGPUアプリを終了してください。分離モデルを切り替える際は前段の重みをCPUへ退避し、GPUへの同時常駐を抑えます。「モデルメモリ解放」は分離モデルのキャッシュを解放します（ダウンロード済みファイルは保持。Whisperなど別機能のキャッシュは対象外）。
 

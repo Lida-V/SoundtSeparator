@@ -48,6 +48,14 @@ class DownloadManagerTests(unittest.TestCase):
                 downloads.download("not-an-allowed-model", lambda *_: None)
             network.assert_not_called()
 
+    def test_vram_guidance_distinguishes_legacy_estimates_and_measurements(self):
+        groups = {entry["id"]: entry for entry in downloads.catalog()}
+        self.assertIn("旧案内", groups["bandit"]["gpu_reference"])
+        self.assertIn("RTX 4090実測", groups["bs_roformer"]["gpu_reference"])
+        self.assertIn("約1.54 GiB予約", groups["dbs_dnr"]["gpu_reference"])
+        self.assertIn("16 GB以上", groups["mega_53"]["gpu_reference"])
+        self.assertIn("最低要件ではありません", " ".join(groups["dbs_dnr"]["requirements"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,13 +94,27 @@ def _groups():
         _group("resemblyzer", "Resemblyzer", "従来の話者推定。重みはライブラリに同梱。", downloadable=False, bundled_module="resemblyzer", source_url="https://github.com/resemble-ai/Resemblyzer"),
         _group("basic_pitch", "Basic Pitch", "MIDI採譜。重みはライブラリに同梱。", downloadable=False, bundled_module="basic_pitch", source_url="https://github.com/spotify/basic-pitch"),
     ]
-    # 数値は公開元で確認できたものだけを記載し、未測定の値を最低要件にしない。
+    # 公式推奨・旧表示・条件付き実測を区別する。いずれも推論時の固定要件ではない。
+    gpu_reference = {
+        "bandit": "旧案内：約4 GB（算出条件不明）。RTX 4090実測：合成8秒・高速で約0.81 GiB割当。",
+        "dbs_dnr": "RTX 4090実測：合成8秒・標準で約1.13 GiB割当・約1.54 GiB予約。",
+        "bs_roformer": "旧案内：約6 GB（算出条件不明）。RTX 4090実測：合成8秒・高速で約1.56 GiB割当。",
+        "mel_band_roformer": "旧案内：約6 GB（算出条件不明・未検証）。",
+        "htdemucs_6s": "旧案内：音楽6ステムで約6 GB・8 GB推奨（算出条件不明）。RTX 4090実測：合成8秒・高速・BS併用で約1.56 GiB割当。",
+        "mega_53": "RTX 4090実測：合成8秒・高速・2カテゴリで約3.82 GiB割当。公式推奨は16 GB以上。",
+        "drumsep": "旧案内：約4 GB（算出条件不明・未検証）。",
+        "karaoke": "旧案内：約6 GB（算出条件不明・未検証）。",
+        "dereverb": "旧案内：約6 GB（算出条件不明・未検証）。",
+        "nemotron_reuse": "RTX 4090実測：約0.98 GiB割当（合成2秒）。",
+    }
     common = "共通：Windows・Python 3.11の本アプリ環境。必要メモリ容量は未計測。"
     general = "CPUまたはCUDA対応NVIDIA GPU。GPUを推奨。最低VRAMは未公表。"
     for group in groups:
         ident = group["id"]
         if ident == "mega_53":
             detail = "推奨：NVIDIA GPU、VRAM 16GB以上（モデル提供元の推奨）。CPU使用時は非常に低速。"
+        elif ident == "htdemucs_6s":
+            detail = "CPUまたはCUDA対応NVIDIA GPU。Demucs公式CLIは最小約3 GB・既定設定で約7 GBを案内。本アプリの6ステム処理の保証値ではありません。"
         elif ident == "nemotron_reuse":
             detail = ("公式実装：Linux・NVIDIA Ampere。アプリ独自のPyTorch実装はWindows / RTX 4090で合成音のGPU推論を確認。"
                       "CPU推論および最低RAM・VRAMは未検証。モノラル出力。")
@@ -117,6 +131,14 @@ def _groups():
         else:
             detail = general
         group["requirements"] = [common, detail]
+        if ident in gpu_reference:
+            group["gpu_reference"] = gpu_reference[ident]
+            notes = []
+            if "旧案内" in gpu_reference[ident]:
+                notes.append("旧案内は保証値ではありません。")
+            if "実測" in gpu_reference[ident]:
+                notes.append("実測は特定条件のPyTorch使用量で、総VRAMや最低要件ではありません。")
+            group["requirements"].append(gpu_reference[ident] + " " + " ".join(notes) + " 詳細はREADMEを参照。")
     return groups
 
 

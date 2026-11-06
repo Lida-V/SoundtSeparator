@@ -261,19 +261,21 @@ class Engine:
     def model_catalog(self):
         cached = self._cache.copy()
         from model_downloads import catalog
-        availability = {entry["id"]: entry["downloaded"] for entry in catalog()}
+        download_info = {entry["id"]: entry for entry in catalog()}
         result = []
         for entry in MODEL_CATALOG:
             item = {key: copy.deepcopy(value) for key, value in entry.items() if not key.startswith("_")}
             item["notes"] = [item["notes"]] if isinstance(item["notes"], str) else item["notes"]
             spec = entry.get("_spec")
             if spec:
-                item["downloaded"] = availability.get(entry["id"], False)
+                item["downloaded"] = download_info.get(entry["id"], {}).get("downloaded", False)
                 item["cached"] = spec["file"] in cached
             else:
                 from dbs_adapter import downloaded
                 item["downloaded"] = downloaded()
                 item["cached"] = entry["id"] in cached
+            if download_info.get(entry["id"], {}).get("gpu_reference"):
+                item["gpu_reference"] = download_info[entry["id"]]["gpu_reference"]
             result.append(item)
         return result
 

@@ -94,6 +94,11 @@ function renderModelDetails() {
     facts.append(link);
   }
   detail.append(facts);
+  if (model.gpu_reference) {
+    const note = model.gpu_reference.includes("旧案内") ? "旧案内は保証値ではありません。" : "";
+    const measurement = model.gpu_reference.includes("実測") ? "実測は特定条件のPyTorch使用量です。" : "";
+    detail.append(uiElement("p", "settings-note", `VRAM参考：${model.gpu_reference} ${note} ${measurement}`));
+  }
   if (!model.downloaded) {
     const help = uiElement("button", "text-button", "利用前にモデルを取得する ↑");
     help.type = "button";
