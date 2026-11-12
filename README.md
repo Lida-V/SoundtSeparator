@@ -155,6 +155,80 @@ Gitを使わない場合は、[ZIP](https://github.com/Lida-V/SoundtSeparator/ar
 
 `run.bat` をダブルクリック → ブラウザで http://127.0.0.1:8765 が開きます。
 
+## エージェントから使う（スキル / MCP / CLI）
+
+Claude Code や Codex などのAIエージェントから、画面を開かずに分離・採譜を実行できます。`run.bat` でサーバーを起動しておく必要はありません。導入方法は2つあり、どちらも同じCLIを使います。
+
+| 方法 | 向いている場合 | 導入 |
+|---|---|---|
+| **スキル**（MCPサーバーなし） | サーバーの登録や承認をせずに使いたい。コマンドを実行できるエージェント | このフォルダを開くだけ。別のフォルダから使うなら `install_skill.py` |
+| **MCP** | ツールとして呼びたい。進捗の取得やジョブの取り消しを使いたい | `.mcp.json`（このフォルダ）または `claude mcp add` |
+
+準備は次の2つです。
+
+1. `setup.bat` を済ませる（`.venv` ができていること）。
+2. 使うモデルを、アプリ画面の「AIモデルの管理」で取得しておく。CLIとMCPはモデルを取得しません。足りないときはエラーで止まります。
+
+### スキル（MCPサーバーを使わない）
+
+[.claude/skills/soundsep/SKILL.md](.claude/skills/soundsep/SKILL.md) に、CLIの呼び出し方と進め方をまとめたスキルを同梱しています。Claude Code でこのフォルダを開くと、そのまま `soundsep` スキルとして使えます。常駐するプロセスはなく、エージェントが必要なときにCLIを実行します。
+
+別のフォルダで作業するエージェントから使うときは、次のコマンドでユーザーのスキルフォルダへ導入します。このフォルダの場所を書き込んだスキルを1ファイルだけコピーします。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 tools\install_skill.py
+```
+
+| オプション | 導入先 |
+|---|---|
+| （なし） | `~/.claude/skills/soundsep/`（Claude Code） |
+| `--agent codex` | `~/.codex/skills/soundsep/`（Codex） |
+| `--dest <フォルダ>` | 指定したスキルフォルダ |
+| `--remove` | 導入したスキルを削除 |
+
+同名の別のスキルがある場合は上書きしません。このフォルダを移動したときは、もう一度実行してください。スキルの仕組みがないエージェントには、`SKILL.md` の内容をそのまま指示として渡せます。
+
+### MCP
+
+リポジトリ直下の [.mcp.json](.mcp.json) に、登録名 `soundsep` のサーバーを定義しています。パスはリポジトリからの相対指定なので、**このフォルダをプロジェクトとして開いたとき**に使えます。Claude Code は初回に、プロジェクトのMCPサーバーを有効にするか確認します。
+
+別のフォルダで作業するエージェントから使うときは、絶対パスで登録します（`<フォルダ>` は展開先に置き換えてください）。
+
+```powershell
+claude mcp add soundsep -e PYTHONUTF8=1 -e HF_HUB_OFFLINE=1 -- "<フォルダ>\.venv\Scripts\python.exe" -X utf8 "<フォルダ>\tools\soundsep_mcp.py"
+```
+
+| ツール | 内容 |
+|---|---|
+| `soundsep_status` | torch・GPUの空き・モデルの取得状況 |
+| `soundsep_models` | モデルごとの取得済みかどうか |
+| `soundsep_separate` | ステム分離。`mode` は `music`（6ステム）/ `vocals` / `dme` / `mega` |
+| `soundsep_subseparate` | `vocals` をリード／バックへ、`drums` をキック／スネア／シンバル／タムへ |
+| `soundsep_midi` | basic-pitch でWAVを採譜してMIDIを書き出す |
+| `soundsep_task_status` | ジョブの進捗・結果・ログの末尾 |
+| `soundsep_cancel` | 実行中のジョブを止める |
+
+分離・採譜は `task_id` をすぐ返すので、`soundsep_task_status` で完了を待ちます。同時に動かせるジョブは1本です。ジョブの状態とログは `output/_agent_jobs/` に残ります。
+
+### CLI
+
+スキルもMCPも、中身はこのCLIです。スクリプトから直接呼ぶこともできます。結果はJSONで標準出力に、進捗は標準エラーに出ます。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 tools\soundsep_control.py status
+.\.venv\Scripts\python.exe -X utf8 tools\soundsep_control.py separate --input song.wav --out out\song --mode music --quality high --exact
+.\.venv\Scripts\python.exe -X utf8 tools\soundsep_control.py subseparate --input out\song\vocals.wav --out out\song_vocals --kind vocals
+.\.venv\Scripts\python.exe -X utf8 tools\soundsep_control.py midi --input out\song\bass.wav --out out\song\bass.mid
+```
+
+### 出力と注意点
+
+- 出力は入力と同じサンプルレート・長さの32bit float WAVと `manifest.json` です。既存のファイルは上書きしません。出力先には新しいフォルダを指定してください。
+- `--exact`（MCPでは `exact`）は「元音源 − 全ステムの和」を `other` に足し、全ステムを足し戻すと元音源に一致するようにします。`music` で全ステムを出すときだけ使えます。
+- リード／バック分離の `lead` と `back` の割り当ては、曲や区間によって入れ替わることがあります。`manifest.json` の `window_rms`（5秒ごとの音量）で確認してください。
+- 採譜結果には誤りが含まれます。音符の数と音域は結果のJSONで確認できますが、原曲との照合は別途必要です。
+- CLIとMCPの動作確認はCUDA対応GPUで行っています。CPUだけでの実行は確認していません。ジョブ管理がWindowsのコマンドを使うため、MCPはWindows専用です。
+
 ## 公開サイトの更新
 
 紹介サイトのソースは `site/`、Cloudflare Pages設定は `wrangler.toml` にあります。公開対象は `site/` の静的ファイルのみで、Pythonサーバー・モデル・音声・個人環境の設定は含みません。[再デプロイ手順](docs/deployment.md) を参照してください。
@@ -330,6 +404,9 @@ SoundtSeparator/
 │   ├── reuse_adapter.py  … RE-USEによる音声強調
 │   ├── repair.py         … DSP修復
 │   └── static/           … フロントエンド
+├── tools/                … エージェント向けCLI (soundsep_control.py)、MCPサーバー (soundsep_mcp.py)、スキル導入 (install_skill.py)
+├── .claude/skills/soundsep/ … エージェント用スキル (MCPなしでCLIを使う手順)
+├── .mcp.json             … MCPサーバーの登録 (相対パス)
 ├── engine/msst/          … MSST フレームワーク (パッチ済み同梱)
 ├── models/               … モデルチェックポイント (手動取得・git管理外)
 └── output/               … 分離結果 (git管理外)

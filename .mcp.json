@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "soundsep": {
+      "command": ".venv/Scripts/python.exe",
+      "args": ["-X", "utf8", "tools/soundsep_mcp.py"],
+      "env": {"PYTHONUTF8": "1", "HF_HUB_OFFLINE": "1"}
+    }
+  }
+}

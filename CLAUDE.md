@@ -16,6 +16,9 @@ run.bat → .venv\Scripts\python.exe app\server.py → http://127.0.0.1:8765
 | [app/transcriber.py](app/transcriber.py) | Whisper文字起こし、単語タイムスタンプからのクリップ長調整(segment_words)、話者分離(assign_speakers=resemblyzer+階層クラスタリング)、セリフ書き出し(export_dialogue) |
 | [app/midi_export.py](app/midi_export.py) | basic-pitch (ONNX) によるAI採譜→MIDI |
 | [app/static/app.js](app/static/app.js) | UI全部。波形/スペクトログラムCanvas、Web Audio再生+レベルメーター、編集(全てクライアントサイド)、WAV/ZIP/.ssproj読み書き |
+| [tools/soundsep_control.py](tools/soundsep_control.py) | エージェント向けCLI。サーバーを介さず `separator.Engine` を直接呼ぶ (status/models/separate/subseparate/midi)。アプリの場所は自身の位置から求める — **絶対パスを書かない** |
+| [tools/soundsep_mcp.py](tools/soundsep_mcp.py) | stdio MCP (登録名 soundsep、[.mcp.json](.mcp.json) は相対パス)。CLIを別プロセスで起動しジョブ化。状態は output/_agent_jobs/。separator.py のAPI (validate_request / Engine.separate / subseparate) を変えたらここも直す |
+| [.claude/skills/soundsep/SKILL.md](.claude/skills/soundsep/SKILL.md) | 利用者向けスキル (MCPなしでCLIを使う手順)。[tools/install_skill.py](tools/install_skill.py) が `$root = "."` の行を絶対パスに置き換えてユーザーのスキルフォルダへ導入する — この行は1か所だけ残す。CLIの引数や出力を変えたらスキルとREADMEも直す |
 | engine/msst/ | ZFTurbo MSST フレームワーク(clone)。**推論用に軽量化パッチ済み(下記)** |
 | models/ | チェックポイント自動DL先 |
 
