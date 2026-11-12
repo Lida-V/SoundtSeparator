@@ -1,6 +1,6 @@
 # GitHubとCloudflareの公開
 
-- ソース: https://github.com/Lida-V/SoundtSeparator （公開リポジトリ）
+- ソース: https://github.com/Lida-V/SoundSeparator （公開リポジトリ）
 - 紹介・ダウンロードページ: https://sound-separator.pages.dev/
 - Cloudflare Pagesプロジェクト: `sound-separator`
 - 公開ブランチ: `main`

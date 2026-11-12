@@ -1,6 +1,6 @@
 # Sound Separator 🎛️
 
-**[紹介・ダウンロードページ](https://sound-separator.pages.dev/)** · [ZIPをダウンロード](https://github.com/Lida-V/SoundtSeparator/archive/refs/heads/main.zip)
+**[紹介・ダウンロードページ](https://sound-separator.pages.dev/)** · [ZIPをダウンロード](https://github.com/Lida-V/SoundSeparator/archive/refs/heads/main.zip)
 
 音声・動画ファイルをAIでステム分離し、そのままブラウザ上で編集・修復できる**完全ローカル**のWebアプリ。
 ファイルは一切外部に送信されません。
@@ -130,12 +130,12 @@ Demucsの公式値は単体CLIに関する案内であり、このアプリの6�
 Gitを使う場合：
 
 ```powershell
-git clone https://github.com/Lida-V/SoundtSeparator.git
-cd SoundtSeparator
+git clone https://github.com/Lida-V/SoundSeparator.git
+cd SoundSeparator
 .\setup.bat
 ```
 
-Gitを使わない場合は、[ZIP](https://github.com/Lida-V/SoundtSeparator/archive/refs/heads/main.zip)をダウンロードして展開し、フォルダ内の `setup.bat` を実行してください。
+Gitを使わない場合は、[ZIP](https://github.com/Lida-V/SoundSeparator/archive/refs/heads/main.zip)をダウンロードして展開し、フォルダ内の `setup.bat` を実行してください。
 
 セットアップではPythonの実行環境と依存パッケージを取得します。Basic PitchとResemblyzerの重みは、それぞれのパッケージに同梱されています。それ以外のモデルは、アプリ起動後に必要なものを明示的に取得してください。取得済みモデルを使った音声処理はローカルで動作します。
 
@@ -393,7 +393,7 @@ claude mcp add soundsep -e PYTHONUTF8=1 -e HF_HUB_OFFLINE=1 -- "<フォルダ>\.
 - フロントエンド: Vanilla JS + Web Audio API + Canvas（ライブラリ不使用。編集・WAVエンコード・ZIP生成もクライアントサイド）
 
 ```
-SoundtSeparator/
+SoundSeparator/
 ├── setup.bat / run.bat   … セットアップ / 起動
 ├── app/
 │   ├── server.py         … FastAPI (ジョブ管理 / denoise / effect API)
