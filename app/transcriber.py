@@ -21,6 +21,8 @@ import numpy as np
 import soundfile as sf
 import torch
 
+from i18n import LocalizedRuntimeError, LocalizedValueError, Status
+
 MODELS = {"small": "small", "medium": "medium", "large": "large-v3"}
 MODEL_ROOT = Path(__file__).resolve().parent.parent / "models"
 CLIP_PAD_SECONDS = 0.15  # セリフ前後の余白
@@ -56,9 +58,12 @@ class Transcriber:
                     model_path = candidate
                     break
             if model_path is None:
-                raise RuntimeError(f"Whisper {name} の検証済みモデルがありません。モデル管理からダウンロードしてください。")
+                raise LocalizedRuntimeError(
+                    "error.model_missing_whisper",
+                    "Whisper {name} の検証済みモデルがありません。モデル管理からダウンロードしてください。",
+                    name=name)
             if progress_cb:
-                progress_cb(0, f"音声認識モデルを読込中 (Whisper {name})...")
+                progress_cb(0, Status("status.whisper_load", "音声認識モデルを読込中 (Whisper {name})...", name=name))
             self._models[name] = whisper.load_model(str(model_path), device=self.device)
         return self._models[name]
 
@@ -81,7 +86,7 @@ class Transcriber:
                 mono16 = mono
 
             if progress_cb:
-                progress_cb(10, "文字起こし中... (長さによっては数分かかります)")
+                progress_cb(10, Status("status.transcribing", "文字起こし中... (長さによっては数分かかります)"))
             result = model.transcribe(
                 mono16,
                 language=language or None,
@@ -140,14 +145,18 @@ class NemotronDiarizer:
         path = MODEL_ROOT / "nemotron-3-diarization"
         if not all((path / name).is_file() for name in
                    ("config.json", "processor_config.json", "model.safetensors")):
-            raise RuntimeError("Nemotron-3-Diarization がありません。モデル管理からダウンロードしてください。")
+            raise LocalizedRuntimeError(
+                "error.model_missing_nemotron_diarization",
+                "Nemotron-3-Diarization がありません。モデル管理からダウンロードしてください。")
         if self._model is None:
             try:
                 from transformers import AutoModelForAudioFrameClassification, AutoProcessor
                 processor = AutoProcessor.from_pretrained(str(path), local_files_only=True)
                 model = AutoModelForAudioFrameClassification.from_pretrained(str(path), local_files_only=True)
             except ImportError as exc:
-                raise RuntimeError("Nemotron の実行環境がありません。セットアップ手順で追加してください。") from exc
+                raise LocalizedRuntimeError(
+                    "error.nemotron_env_missing",
+                    "Nemotron の実行環境がありません。セットアップ手順で追加してください。") from exc
             self._processor = processor
             self._model = model.to("cuda" if torch.cuda.is_available() else "cpu").eval()
         return self._processor, self._model
@@ -160,14 +169,14 @@ class NemotronDiarizer:
         """
         audio = np.asarray(audio, dtype=np.float32)
         if audio.ndim != 2 or audio.shape[1] not in (1, 2) or not np.isfinite(audio).all():
-            raise ValueError("モノラルまたはステレオの正常な音声が必要です")
+            raise LocalizedValueError("error.audio_invalid", "モノラルまたはステレオの正常な音声が必要です")
         if not isinstance(sr, (int, np.integer)) or sr <= 0:
-            raise ValueError("サンプルレートが正しくありません")
+            raise LocalizedValueError("error.bad_sample_rate", "サンプルレートが正しくありません")
         if len(audio) < sr // 10:
-            raise RuntimeError("Nemotron の話者分離には0.1秒以上の音声が必要です。")
+            raise LocalizedRuntimeError("error.nemotron_audio_too_short", "Nemotron の話者分離には0.1秒以上の音声が必要です。")
         with self._lock:
             if progress_cb:
-                progress_cb(0, "Nemotron で話者区間を分析中...")
+                progress_cb(0, Status("status.nemotron_diarizing", "Nemotron で話者区間を分析中..."))
             processor, model = self._load()
             mono = audio.mean(axis=1)
             rate = processor.feature_extractor.sampling_rate
@@ -175,7 +184,7 @@ class NemotronDiarizer:
                 import soxr
                 mono = soxr.resample(mono, sr, rate, quality="HQ").astype(np.float32)
             if len(mono) < rate // 10:
-                raise RuntimeError("Nemotron の話者分離には0.1秒以上の音声が必要です。")
+                raise LocalizedRuntimeError("error.nemotron_audio_too_short", "Nemotron の話者分離には0.1秒以上の音声が必要です。")
             with torch.inference_mode():
                 if len(mono) <= rate * 30:
                     inputs = processor(mono, sampling_rate=rate, return_tensors="pt").to(model.device, dtype=model.dtype)
@@ -203,7 +212,7 @@ class NemotronDiarizer:
                         frame_idx += processor.num_mel_frames_per_step
                         start = processor.audio_chunk_start(frame_idx)
                         if progress_cb:
-                            progress_cb(min(95, int(95 * start / len(mono))), "Nemotron で話者区間を分析中...")
+                            progress_cb(min(95, int(95 * start / len(mono))), Status("status.nemotron_diarizing", "Nemotron で話者区間を分析中..."))
                     inputs = processor(mono[start:], sampling_rate=rate, is_streaming=True,
                                        is_first_audio_chunk=False, is_last_audio_chunk=True, return_tensors="pt")
                     outputs = model(**inputs.to(model.device, dtype=model.dtype), speaker_cache=cache)
@@ -215,12 +224,12 @@ class NemotronDiarizer:
                 if 0 <= speaker < len(SPEAKER_NAMES):
                     start, end = float(item["Start"]), float(item["End"])
                     if not math.isfinite(start) or not math.isfinite(end):
-                        raise RuntimeError("Nemotron から不正な話者区間が返されました")
+                        raise LocalizedRuntimeError("error.nemotron_bad_turns", "Nemotron から不正な話者区間が返されました")
                     start, end = max(0.0, start), min(len(audio) / sr, end)
                     if start < end:
                         turns.append({"start": start, "end": end, "speaker": SPEAKER_NAMES[speaker]})
             if progress_cb:
-                progress_cb(100, "話者区間の分析が完了しました")
+                progress_cb(100, Status("status.nemotron_done", "話者区間の分析が完了しました"))
             return turns
 
     def assign(self, audio, sr, segments, progress_cb=None):
@@ -254,7 +263,7 @@ def assign_speakers(audio, sr, segments, num_speakers=0, progress_cb=None):
     from scipy.cluster.hierarchy import fcluster, linkage
 
     if progress_cb:
-        progress_cb(80, "話者を分析中...")
+        progress_cb(80, Status("status.speaker_analysis", "話者を分析中..."))
     if _voice_encoder is None:
         _voice_encoder = VoiceEncoder("cuda" if torch.cuda.is_available() else "cpu")
 

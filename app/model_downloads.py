@@ -14,6 +14,7 @@ from separator import (MODELS_DIR, BANDIT_CKPT, BSROFORMER_CKPT, MELROFORMER_CKP
                        MEGA_CKPT, DEREVERB_CKPT, KARAOKE_CKPT,
                        DRUMSEP_CKPT_URL, DRUMSEP_CKPT_FILE, CDX23_URL, CDX23_FILES)
 import dbs_adapter
+from i18n import LocalizedRuntimeError, LocalizedValueError, Status
 
 ROOT = Path(MODELS_DIR)
 DIAR_REV = "f667ed73aee57d40cc39428eb768b4fd87a0a29e"
@@ -209,7 +210,10 @@ def _fetch(spec, callback):
     if _present(spec):
         return
     if target.exists():
-        raise RuntimeError(f"既存ファイルのサイズが不正です: {target.name}。内容を確認してください")
+        raise LocalizedRuntimeError(
+            "error.download_bad_existing",
+            "既存ファイルのサイズが不正です: {file}。内容を確認してください",
+            file=target.name)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + "." + uuid.uuid4().hex + ".partial")
     try:
@@ -227,9 +231,15 @@ def _fetch(spec, callback):
                 count += len(block)
                 callback(count, total)
         if count == 0 or (total and count != total):
-            raise RuntimeError(f"{target.name} のダウンロードが途中で終了しました")
+            raise LocalizedRuntimeError(
+                "error.download_file_interrupted",
+                "{file} のダウンロードが途中で終了しました",
+                file=target.name)
         if spec.get("sha256") and digest.hexdigest() != spec["sha256"]:
-            raise RuntimeError(f"{target.name} のSHA-256検証に失敗しました")
+            raise LocalizedRuntimeError(
+                "error.download_sha_mismatch",
+                "{file} のSHA-256検証に失敗しました",
+                file=target.name)
         os.replace(tmp, target)
     finally:
         tmp.unlink(missing_ok=True)
@@ -238,16 +248,20 @@ def _fetch(spec, callback):
 def download(group_id, progress):
     group = next((g for g in _groups() if g["id"] == group_id), None)
     if group is None:
-        raise ValueError("モデルが見つかりません")
+        raise LocalizedValueError("error.download_model_not_found", "モデルが見つかりません")
     if not group.get("downloadable", True):
-        raise ValueError("このモデルはセットアップに同梱されています")
+        raise LocalizedValueError("error.download_bundled", "このモデルはセットアップに同梱されています")
     if available(group):
-        progress(100, "取得済みです")
+        progress(100, Status("status.download_already", "取得済みです"))
         return
     files = group["files"]
     for index, spec in enumerate(files):
         def cb(count, total):
             fraction = min(count / total, 1) if total else 0
-            progress(int((index + fraction) * 100 / len(files)), f"{spec['path'].name} を取得中 ({count // 1048576} MB)")
+            progress(int((index + fraction) * 100 / len(files)), Status(
+                "status.download_fetching", "{file} を取得中 ({mb} MB)",
+                file=spec["path"].name, mb=count // 1048576))
         _fetch(spec, cb)
-        progress(int((index + 1) * 100 / len(files)), f"{spec['path'].name} を確認しました")
+        progress(int((index + 1) * 100 / len(files)), Status(
+            "status.download_verified", "{file} を確認しました",
+            file=spec["path"].name))

@@ -23,6 +23,8 @@ import uuid
 import numpy as np
 import torch
 
+from i18n import LocalizedRuntimeError, LocalizedValueError, Status
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MSST_DIR = os.path.join(BASE_DIR, "engine", "msst")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
@@ -129,18 +131,18 @@ MODEL_CATALOG = [
 def validate_request(mode="dme", model_id=None, selected_stems=None):
     """モデル/モードの組合せを検証し、確定モデルIDと出力仕様を返す。"""
     if mode not in DEFAULT_MODELS:
-        raise ValueError("分離モードが正しくありません")
+        raise LocalizedValueError("error.invalid_mode", "分離モードが正しくありません")
     model_id = model_id or DEFAULT_MODELS[mode]
     entry = next((item for item in MODEL_CATALOG if item["id"] == model_id), None)
     if entry is None or mode not in entry["modes"]:
-        raise ValueError("選択したモデルはこの分離モードに対応していません")
+        raise LocalizedValueError("error.model_mode_mismatch", "選択したモデルはこの分離モードに対応していません")
     specs = MUSIC_STEMS if mode == "music" else entry["stems"]
     if selected_stems is not None:
         if not isinstance(selected_stems, (list, tuple)) or not selected_stems or any(not isinstance(name, str) for name in selected_stems):
-            raise ValueError("抽出するステムを1つ以上選択してください")
+            raise LocalizedValueError("error.no_stems_selected", "抽出するステムを1つ以上選択してください")
         names = set(selected_stems)
         if len(names) != len(selected_stems) or names - {item["name"] for item in specs}:
-            raise ValueError("抽出ステムの指定が正しくありません")
+            raise LocalizedValueError("error.invalid_stems", "抽出ステムの指定が正しくありません")
         specs = [item for item in specs if item["name"] in names]
     return model_id, copy.deepcopy(specs)
 
@@ -182,14 +184,20 @@ def _download(url, filename, progress_cb=None, label="", sha256=None, allow_down
                 for block in iter(lambda: existing.read(1024 * 1024), b""):
                     digest.update(block)
             if digest.hexdigest() != sha256:
-                raise RuntimeError(f"モデルのチェックサムが一致しません。{filename} を確認してください")
+                raise LocalizedRuntimeError(
+                    "error.checksum_mismatch_file",
+                    "モデルのチェックサムが一致しません。{filename} を確認してください",
+                    filename=filename)
         return path
     if not allow_download:
-        raise RuntimeError(f"{label or filename} が未取得です。『モデル管理』から必要なモデルをダウンロードしてください")
+        raise LocalizedRuntimeError(
+            "error.model_missing",
+            "{model} が未取得です。『モデル管理』から必要なモデルをダウンロードしてください",
+            model=label or filename)
     temporary = path + "." + uuid.uuid4().hex + ".partial"
     try:
         if progress_cb:
-            progress_cb(0, f"モデルをダウンロード中 ({label})...")
+            progress_cb(0, Status("status.downloading_model", "モデルをダウンロード中 ({label})...", label=label))
         request = urllib.request.Request(url, headers={"User-Agent": "SoundtSeparator/1.0"})
         digest = hashlib.sha256()
         with urllib.request.urlopen(request, timeout=60) as response, open(temporary, "wb") as target:
@@ -205,13 +213,15 @@ def _download(url, filename, progress_cb=None, label="", sha256=None, allow_down
                 downloaded += len(block)
                 megabytes = downloaded // (1024 * 1024)
                 if progress_cb and megabytes != last_mb:
-                    size = f" / {total / (1024 * 1024):.0f} MB" if total else " MB"
-                    progress_cb(0, f"モデルをダウンロード中 ({label}): {megabytes}{size}")
+                    progress_cb(0, Status(
+                        "status.downloading_model_progress" if total else "status.downloading_model_size_unknown",
+                        "モデルをダウンロード中 ({label}): {mb} / {total} MB" if total else "モデルをダウンロード中 ({label}): {mb} MB",
+                        label=label, mb=megabytes, total=f"{total / (1024 * 1024):.0f}"))
                     last_mb = megabytes
         if not downloaded or (total and downloaded != total):
-            raise RuntimeError("モデルのダウンロードが途中で終了しました。もう一度実行してください")
+            raise LocalizedRuntimeError("error.download_interrupted", "モデルのダウンロードが途中で終了しました。もう一度実行してください")
         if sha256 and digest.hexdigest() != sha256:
-            raise RuntimeError("モデルのチェックサムが一致しません。もう一度実行してください")
+            raise LocalizedRuntimeError("error.checksum_mismatch", "モデルのチェックサムが一致しません。もう一度実行してください")
         os.replace(temporary, path)
     finally:
         if os.path.isfile(temporary):
@@ -223,7 +233,7 @@ def _fit_audio(data, reference):
     """推論端数を揃え、無効なモデル出力は保存前に検出する。"""
     data = np.asarray(data, dtype=np.float32)
     if data.ndim != 2 or data.shape[0] not in {1, reference.shape[0]} or not np.isfinite(data).all():
-        raise RuntimeError("分離モデルから不正な音声が返されました")
+        raise LocalizedRuntimeError("error.bad_model_output", "分離モデルから不正な音声が返されました")
     data = data[:, :reference.shape[1]]
     if data.shape[1] < reference.shape[1]:
         data = np.pad(data, ((0, 0), (0, reference.shape[1] - data.shape[1])))
@@ -344,7 +354,7 @@ class Engine:
                 _download(spec["config_url"], os.path.basename(spec["config"]), progress_cb, label + " 設定")
             path = _download(spec["url"], spec["file"], progress_cb, label, sha256=spec.get("sha256"))
             if progress_cb:
-                progress_cb(0, f"モデルを読み込み中 ({label})...")
+                progress_cb(0, Status("status.loading_model", "モデルを読み込み中 ({label})...", label=label))
             model, config = get_model_from_config(spec["type"], spec["config"])
             # 公開configの学習用バッチ設定を引き継がず、推論のVRAMを抑える。
             config.inference.batch_size = 1
@@ -357,11 +367,13 @@ class Engine:
         self._activate("htdemucs_6s")
         if "htdemucs_6s" not in self._cache:
             if progress_cb:
-                progress_cb(0, "モデルを読み込み中 (htdemucs_6s)...")
+                progress_cb(0, Status("status.loading_model", "モデルを読み込み中 ({label})...", label="htdemucs_6s"))
             from model_downloads import htdemucs_path
             path = htdemucs_path()
             if path is None:
-                raise RuntimeError("htdemucs_6s が未取得です。『モデル管理』からダウンロードしてください")
+                raise LocalizedRuntimeError(
+                    "error.model_missing_htdemucs",
+                    "htdemucs_6s が未取得です。『モデル管理』からダウンロードしてください")
             model = _load_demucs_checkpoint(str(path))
             model.to(self.device).eval()
             self._cache["htdemucs_6s"] = model
@@ -387,12 +399,12 @@ class Engine:
         """
         model_id, specs = validate_request(mode, model_id, selected_stems)
         if quality not in {"fast", "standard", "high"}:
-            raise ValueError("品質設定が正しくありません")
+            raise LocalizedValueError("error.invalid_quality", "品質設定が正しくありません")
         audio = np.asarray(audio, dtype=np.float32)
         if audio.ndim != 2 or audio.shape[0] not in {1, 2} or audio.shape[1] < SAMPLE_RATE // 2:
-            raise ValueError("0.5秒以上のモノラルまたはステレオ音声が必要です")
+            raise LocalizedValueError("error.audio_too_short", "0.5秒以上のモノラルまたはステレオ音声が必要です")
         if not np.isfinite(audio).all():
-            raise ValueError("音声に無効な数値が含まれています")
+            raise LocalizedValueError("error.audio_non_finite", "音声に無効な数値が含まれています")
         original_channels = audio.shape[0]
         if original_channels == 1:
             audio = np.repeat(audio, 2, axis=0)
@@ -421,7 +433,9 @@ class Engine:
                 return output
             except torch.cuda.OutOfMemoryError as exc:
                 self._release_models()
-                raise RuntimeError("GPUメモリが不足しました。他のGPUアプリを閉じるか、短い試聴区間で再実行してください") from exc
+                raise LocalizedRuntimeError(
+                    "error.gpu_oom",
+                    "GPUメモリが不足しました。他のGPUアプリを閉じるか、短い試聴区間で再実行してください") from exc
 
     # ------------------------------------------------------------------ DME モード
     def _separate_dme(self, audio, quality, progress_cb):
@@ -436,7 +450,7 @@ class Engine:
         def cb(frac):
             if progress_cb:
                 pct = int(100 * frac * bandit_span)
-                progress_cb(pct, f"分離処理中 (BandIt Plus)... ({pct}%)")
+                progress_cb(pct, Status("status.separating_bandit", "分離処理中 (BandIt Plus)... ({pct}%)", pct=pct))
 
         res = self._run_msst(model, config, BANDIT_CKPT["type"], audio, cb)
         stems = {
@@ -458,7 +472,8 @@ class Engine:
         out = _chunked_demucs(
             models, audio, self.device, overlap=0.75,
             progress_cb=(lambda f: progress_cb(
-                int(base_pct + span * f), f"分離処理中 (アンサンブル)... ({int(base_pct + span * f)}%)"
+                int(base_pct + span * f),
+                Status("status.separating_ensemble", "分離処理中 (アンサンブル)... ({pct}%)", pct=int(base_pct + span * f))
             )) if progress_cb else None,
         )
         # CDX23 の出力順: 0=music, 1=effect, 2=dialog
@@ -474,7 +489,7 @@ class Engine:
         def cb(frac):
             if progress_cb:
                 pct = int(span * frac)
-                progress_cb(pct, f"ボーカルを分離中 ({label})... ({pct}%)")
+                progress_cb(pct, Status("status.separating_vocals", "ボーカルを分離中 ({label})... ({pct}%)", label=label, pct=pct))
 
         res = self._run_msst(model, config, spec["type"], audio, cb)
         vocals = _fit_audio(res["vocals"], audio)
@@ -493,7 +508,7 @@ class Engine:
         def cb(frac):
             if progress_cb:
                 pct = int(92 * frac)
-                progress_cb(pct, f"楽器を抽出中 (Mega 53・{len(indices)}カテゴリ)... ({pct}%)")
+                progress_cb(pct, Status("status.extracting_mega", "楽器を抽出中 (Mega 53・{count}カテゴリ)... ({pct}%)", count=len(indices), pct=pct))
 
         return self._run_msst(_SelectedMegaHeads(model, indices), config, MEGA_CKPT["type"], audio, cb)
 
@@ -510,7 +525,7 @@ class Engine:
         def cb2(frac):
             if progress_cb:
                 pct = int(50 + 45 * frac)
-                progress_cb(pct, f"楽器を分離中 (Demucs 6stem)... ({pct}%)")
+                progress_cb(pct, Status("status.separating_demucs6", "楽器を分離中 (Demucs 6stem)... ({pct}%)", pct=pct))
 
         out = _chunked_demucs([model6], instrumental, self.device, overlap=dem_overlap, progress_cb=cb2)
         # htdemucs_6s の出力順: drums, bass, other, vocals, guitar, piano
@@ -539,7 +554,7 @@ class Engine:
                 if "drumsep" not in self._cache:
                     path = _download(DRUMSEP_CKPT_URL, DRUMSEP_CKPT_FILE, progress_cb, "DrumSep")
                     if progress_cb:
-                        progress_cb(0, "モデルを読み込み中 (DrumSep)...")
+                        progress_cb(0, Status("status.loading_model", "モデルを読み込み中 ({label})...", label="DrumSep"))
                     model = _load_demucs_checkpoint(path)
                     model.to(self.device).eval()
                     self._cache["drumsep"] = model
@@ -547,7 +562,7 @@ class Engine:
 
                 def cb(frac):
                     if progress_cb:
-                        progress_cb(int(100 * frac), f"ドラムを細分化中... ({int(100 * frac)}%)")
+                        progress_cb(int(100 * frac), Status("status.subsep_drums", "ドラムを細分化中... ({pct}%)", pct=int(100 * frac)))
 
                 out = _chunked_demucs([model], audio, self.device, overlap=0.55, progress_cb=cb)
                 # DrumSep のソース名はスペイン語 (bombo=キック, redoblante=スネア, platillos=シンバル)
@@ -559,7 +574,7 @@ class Engine:
 
                 def cb(frac):
                     if progress_cb:
-                        progress_cb(int(100 * frac), f"リード/バックを分離中... ({int(100 * frac)}%)")
+                        progress_cb(int(100 * frac), Status("status.subsep_vocals", "リード/バックを分離中... ({pct}%)", pct=int(100 * frac)))
 
                 res = self._run_msst(model, config, KARAOKE_CKPT["type"], audio, cb)
                 # target: karaoke = 入力からリードボーカルを除いたもの
@@ -580,7 +595,7 @@ class Engine:
 
             def cb(frac):
                 if progress_cb:
-                    progress_cb(int(100 * frac), "リバーブ除去中...")
+                    progress_cb(int(100 * frac), Status("status.dereverb", "リバーブ除去中..."))
 
             res = self._run_msst(model, config, DEREVERB_CKPT["type"], audio, cb)
             out = res["noreverb"][:, : audio.shape[1]]
