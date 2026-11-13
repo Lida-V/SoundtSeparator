@@ -22,12 +22,24 @@ class ServerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.output_patch = patch.object(server, "OUTPUT_DIR", self.temp.name)
         self.output_patch.start()
+        # 未取得モデルの検証は実ファイルの有無に依存するため、取得済みで固定する
+        self.catalog_patch = patch("model_downloads.catalog", return_value=[
+            {"id": "bandit", "label": "BandIt Plus", "downloaded": True},
+            {"id": "dbs_dnr", "label": "DBS-TIGER DnR", "downloaded": True},
+            {"id": "bs_roformer", "label": "BS-RoFormer", "downloaded": True},
+            {"id": "mel_band_roformer", "label": "MelBand RoFormer", "downloaded": True},
+            {"id": "mega_53", "label": "MVSep Mega 53 v1", "downloaded": True},
+            {"id": "htdemucs_6s", "label": "HTDemucs 6ステム", "downloaded": True},
+            {"id": "cdx23", "label": "CDX23", "downloaded": True},
+        ])
+        self.catalog_patch.start()
         with server.jobs_lock:
             server.jobs.clear()
 
     def tearDown(self):
         with server.jobs_lock:
             server.jobs.clear()
+        self.catalog_patch.stop()
         self.output_patch.stop()
         self.temp.cleanup()
 

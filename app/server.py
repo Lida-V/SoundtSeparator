@@ -19,10 +19,11 @@ import zipfile
 
 import numpy as np
 import soundfile as sf
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from i18n import LocalizedRuntimeError, LocalizedValueError, Status, localize_catalog, localize_stem, resolve_lang
 from separator import SAMPLE_RATE, engine, validate_request
 from transcriber import assign_speakers, export_dialogue, nemotron_diarizer, segment_words, transcriber
 
@@ -45,6 +46,29 @@ SUBSEP_SPECS = {
 }
 app = FastAPI(title="Sound Separator")
 
+
+class LocalizedHTTPException(HTTPException):
+    """detail (ja正本) に加えて detail_key / detail_params を返す HTTPException。"""
+
+    def __init__(self, status_code, key, detail, params=None):
+        super().__init__(status_code=status_code, detail=detail)
+        self.i18n_key = key
+        self.i18n_params = params
+
+
+@app.exception_handler(LocalizedHTTPException)
+async def localized_http_exception_handler(request, exc):
+    content = {"detail": exc.detail, "detail_key": exc.i18n_key}
+    if exc.i18n_params:
+        content["detail_params"] = exc.i18n_params
+    return JSONResponse(status_code=exc.status_code, content=content)
+
+
+def request_locale(request, lang=None):
+    """?lang= を優先し、request なしの直接呼び出し (テスト等) では ja に寄せる。"""
+    return resolve_lang(lang, request.headers.get("accept-language") if request else None)
+
+
 jobs: dict = {}
 jobs_lock = threading.Lock()
 
@@ -52,6 +76,24 @@ jobs_lock = threading.Lock()
 def set_job(job_id, **kwargs):
     with jobs_lock:
         jobs[job_id].update(kwargs)
+
+
+def set_job_message(job_id, message, **kwargs):
+    """Status (ja正本 + 翻訳キー) を message / status_key / status_params へ展開する。"""
+    if isinstance(message, Status):
+        set_job(job_id, message=message.text, status_key=message.i18n_key,
+                status_params=message.i18n_params, **kwargs)
+    else:
+        set_job(job_id, message=message, status_key=None, status_params=None, **kwargs)
+
+
+def set_job_error(job_id, exc):
+    """例外からエラー状態を書き込む。Localized 系なら翻訳キーも併設する。"""
+    import traceback
+    traceback.print_exc()
+    set_job(job_id, status="error", message=str(exc),
+            status_key=getattr(exc, "i18n_key", None),
+            status_params=getattr(exc, "i18n_params", None))
 
 
 def decode_to_wav(src_path: str, dst_path: str, preview_start=0.0, preview_duration=None):
@@ -67,7 +109,7 @@ def decode_to_wav(src_path: str, dst_path: str, preview_start=0.0, preview_durat
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0 or not os.path.isfile(dst_path):
         tail = (proc.stderr or "").strip().splitlines()[-3:]
-        raise RuntimeError("音声の読み込みに失敗しました: " + " / ".join(tail))
+        raise LocalizedRuntimeError("error.decode_failed", "音声の読み込みに失敗しました: {detail}", detail=" / ".join(tail))
 
 
 def resample_audio(audio, source_rate, target_rate):
@@ -83,7 +125,7 @@ def process_job(job_id: str, input_path: str, mode: str, quality: str,
                 model_id=None, selected_stems=None, preview_start=0.0, preview_duration=None):
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     try:
-        set_job(job_id, status="processing", progress=0, message="音声を読み込み中...")
+        set_job_message(job_id, Status("status.loading_audio", "音声を読み込み中..."), status="processing", progress=0)
         mix_path = os.path.join(job_dir, "original.wav")
         decode_to_wav(input_path, mix_path, preview_start, preview_duration)
 
@@ -91,43 +133,43 @@ def process_job(job_id: str, input_path: str, mode: str, quality: str,
         audio = audio.T  # (channels, samples)
         duration = audio.shape[1] / sr
         if duration < 0.5:
-            raise RuntimeError("音声が短すぎます (0.5秒以上必要です)")
-        set_job(job_id, duration=duration, sample_rate=sr, progress=0, message="分離エンジンの順番を待っています...")
+            raise LocalizedRuntimeError("error.audio_too_short_server", "音声が短すぎます (0.5秒以上必要です)")
+        set_job_message(job_id, Status("status.waiting_engine", "分離エンジンの順番を待っています..."),
+                        duration=duration, sample_rate=sr, progress=0)
 
         def cb(pct, msg):
-            set_job(job_id, progress=pct, message=msg)
+            set_job_message(job_id, msg, progress=pct)
 
         t0 = time.time()
         stems = engine.separate(audio, mode=mode, quality=quality, progress_cb=cb,
                                 model_id=model_id, selected_stems=selected_stems)
 
-        set_job(job_id, progress=100, message="ファイルを書き出し中...")
+        set_job_message(job_id, Status("status.writing_files", "ファイルを書き出し中..."), progress=100)
         with jobs_lock:
             specs = list(jobs[job_id]["stem_specs"])
         for spec in specs:
             data = stems[spec["name"]].T  # (samples, channels)
             if data.shape[0] != audio.shape[1] or not np.isfinite(data).all():
-                raise RuntimeError("モデルの出力長または数値が不正です")
+                raise LocalizedRuntimeError("error.bad_output_length", "モデルの出力長または数値が不正です")
             # AI出力のピークを切り捨てず、細部も保つ。保存時の音量はエディタで調整できる。
             sf.write(os.path.join(job_dir, f"{spec['name']}.wav"), data, sr, subtype="FLOAT")
 
-        set_job(
+        set_job_message(
             job_id,
+            Status("status.done", "完了"),
             status="done",
-            message="完了",
             elapsed=round(time.time() - t0, 1),
             output_channels=int(next(iter(stems.values())).shape[0]),
         )
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        set_job(job_id, status="error", message=str(e))
+        set_job_error(job_id, e)
 
 
 @app.get("/api/models")
-def get_models():
+def get_models(request: Request = None, lang: str | None = None):
+    locale = request_locale(request, lang)
     return {
-        "models": engine.model_catalog(),
+        "models": localize_catalog(engine.model_catalog(), locale),
         "defaults": {"dme": "bandit", "music": "bs_roformer", "vocals": "bs_roformer", "mega": "mega_53"},
         "runtime": engine.status(),
     }
@@ -138,9 +180,11 @@ model_download_lock = threading.Lock()
 
 
 @app.get("/api/model-downloads")
-def list_model_downloads():
+def list_model_downloads(request: Request = None, lang: str | None = None):
     from model_downloads import catalog
-    return {"groups": catalog()}
+    from i18n import localize_downloads
+    locale = request_locale(request, lang)
+    return {"groups": localize_downloads(catalog(), locale)}
 
 
 @app.post("/api/model-downloads/{model_id}")
@@ -148,26 +192,39 @@ def start_model_download(model_id: str):
     from model_downloads import catalog, download
     group = next((g for g in catalog() if g["id"] == model_id), None)
     if group is None:
-        raise HTTPException(404, "モデルが見つかりません")
+        raise LocalizedHTTPException(404, "error.download_model_not_found", "モデルが見つかりません")
     if not group["downloadable"]:
-        raise HTTPException(400, "このモデルはセットアップに同梱されています")
+        raise LocalizedHTTPException(400, "error.download_bundled", "このモデルはセットアップに同梱されています")
     with model_download_lock:
         if any(j["status"] in ("queued", "running") for j in model_download_jobs.values()):
-            raise HTTPException(409, "別のモデルをダウンロード中です")
+            raise LocalizedHTTPException(409, "error.download_in_progress", "別のモデルをダウンロード中です")
         job_id = uuid.uuid4().hex[:12]
-        model_download_jobs[job_id] = {"status": "queued", "progress": 0, "message": "待機中", "error": None}
+        model_download_jobs[job_id] = {"status": "queued", "progress": 0,
+                                       "message": "待機中", "message_key": "status.download_queued",
+                                       "message_params": None, "error": None}
 
     def run():
         def report(pct, message):
             with model_download_lock:
-                model_download_jobs[job_id].update(status="running", progress=pct, message=message)
+                update = {"status": "running", "progress": pct}
+                if isinstance(message, Status):
+                    update.update(message=message.text, message_key=message.i18n_key,
+                                  message_params=message.i18n_params)
+                else:
+                    update.update(message=message, message_key=None, message_params=None)
+                model_download_jobs[job_id].update(update)
         try:
             download(model_id, report)
             with model_download_lock:
-                model_download_jobs[job_id].update(status="done", progress=100, message="取得完了")
+                model_download_jobs[job_id].update(status="done", progress=100,
+                                                   message="取得完了", message_key="status.download_done",
+                                                   message_params=None)
         except Exception as exc:
             with model_download_lock:
-                model_download_jobs[job_id].update(status="error", message="取得に失敗しました", error=str(exc))
+                model_download_jobs[job_id].update(status="error",
+                                                   message="取得に失敗しました", message_key="status.download_failed",
+                                                   error=str(exc), error_key=getattr(exc, "i18n_key", None),
+                                                   error_params=getattr(exc, "i18n_params", None))
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id}
@@ -178,37 +235,42 @@ def get_model_download_job(job_id: str):
     with model_download_lock:
         job = model_download_jobs.get(job_id)
         if job is None:
-            raise HTTPException(404, "ダウンロード状況が見つかりません")
+            raise LocalizedHTTPException(404, "error.download_job_not_found", "ダウンロード状況が見つかりません")
         return dict(job)
 
 
-def require_downloaded_models(*model_ids):
+def require_downloaded_models(*model_ids, locale="ja"):
     from model_downloads import catalog
+    from i18n import download_label
     groups = {g["id"]: g for g in catalog()}
-    missing = [groups[mid]["label"] for mid in model_ids if not groups[mid]["downloaded"]]
+    missing = [download_label(groups[mid], locale) for mid in model_ids if not groups[mid]["downloaded"]]
     if missing:
-        raise HTTPException(400, "必要なモデルが未取得です。「AIモデルの管理」から取得してください: " + "、".join(missing))
+        raise LocalizedHTTPException(
+            400, "error.models_missing",
+            "必要なモデルが未取得です。「AIモデルの管理」から取得してください: " + "、".join(missing),
+            {"models": missing})
 
 
 @app.post("/api/models/release")
 def release_models():
     if not engine.release_models():
-        raise HTTPException(409, "分離・修復の処理中はモデルを解放できません")
+        raise LocalizedHTTPException(409, "error.release_busy", "分離・修復の処理中はモデルを解放できません")
     return engine.status()
 
 
 def validate_preview(preview_start, preview_duration):
     if not math.isfinite(preview_start) or preview_start < 0:
-        raise ValueError("試し分離の開始秒は0以上の有限値で指定してください")
+        raise LocalizedValueError("error.preview_start_invalid", "試し分離の開始秒は0以上の有限値で指定してください")
     if preview_duration is not None:
         if not math.isfinite(preview_duration) or not 5 <= preview_duration <= 60:
-            raise ValueError("試し分離の長さは5〜60秒で指定してください")
+            raise LocalizedValueError("error.preview_duration_invalid", "試し分離の長さは5〜60秒で指定してください")
     elif preview_start != 0:
-        raise ValueError("開始秒を指定する場合は試し分離の長さも指定してください")
+        raise LocalizedValueError("error.preview_needs_duration", "開始秒を指定する場合は試し分離の長さも指定してください")
 
 
 @app.post("/api/jobs")
 def create_job(
+    request: Request = None,
     file: UploadFile = File(...),
     mode: str = Form("dme"),
     quality: str = Form("standard"),
@@ -218,21 +280,27 @@ def create_job(
     preview_duration: float | None = Form(None),
 ):
     if quality not in ("fast", "standard", "high"):
-        raise HTTPException(400, "品質は高速・標準・高品質から選んでください")
+        raise LocalizedHTTPException(400, "error.quality_choice", "品質は高速・標準・高品質から選んでください")
     try:
         selection = json.loads(selected_stems) if selected_stems is not None else None
         model_id, specs = validate_request(mode, model_id, selection)
         validate_preview(preview_start, preview_duration)
-    except (ValueError, TypeError) as exc:
+    except ValueError as exc:
+        # LocalizedValueError はキー付きで、それ以外は従来どおり ja 文字列のみ
+        key = getattr(exc, "i18n_key", None)
+        if key:
+            raise LocalizedHTTPException(400, key, str(exc), getattr(exc, "i18n_params", None)) from exc
+        raise HTTPException(400, str(exc)) from exc
+    except TypeError as exc:
         raise HTTPException(400, str(exc)) from exc
     if not file.filename:
-        raise HTTPException(400, "音声・動画ファイルを選択してください")
+        raise LocalizedHTTPException(400, "error.no_file", "音声・動画ファイルを選択してください")
     dependencies = [model_id]
     if mode == "music":
         dependencies.append("htdemucs_6s")
     if model_id == "bandit" and quality == "high":
         dependencies.append("cdx23")
-    require_downloaded_models(*dependencies)
+    require_downloaded_models(*dependencies, locale=request_locale(request))
     model = next(m for m in engine.model_catalog() if m["id"] == model_id)
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
@@ -262,6 +330,8 @@ def create_job(
             "status": "queued",
             "progress": 0,
             "message": "待機中...",
+            "status_key": "status.queued",
+            "status_params": None,
             "created": time.time(),
         }
 
@@ -271,19 +341,23 @@ def create_job(
 
 
 @app.get("/api/jobs/{job_id}")
-def get_job(job_id: str):
+def get_job(job_id: str, request: Request = None, lang: str | None = None):
     with jobs_lock:
         job = jobs.get(job_id)
         if job is None:
             raise HTTPException(404, "job not found")
         job = dict(job)
+    locale = request_locale(request, lang)
     if job["status"] == "done" and job.get("kind") not in ("dialogue", "subsep", "speaker_stems"):
         job["stems"] = [
-            {**spec, "url": f"/api/jobs/{job_id}/audio/{spec['name']}.wav"}
+            localize_stem({**spec, "url": f"/api/jobs/{job_id}/audio/{spec['name']}.wav"}, locale)
             for spec in job["stem_specs"]
         ]
         job["original_url"] = f"/api/jobs/{job_id}/audio/original.wav"
         job["zip_url"] = f"/api/jobs/{job_id}/download.zip"
+    elif job["status"] == "done" and job.get("kind") in ("subsep", "speaker_stems"):
+        # 追加分離ジョブのステムは完了時に dict 内へ保存済み。表示名だけ差し替える
+        job["stems"] = [localize_stem(spec, locale) for spec in job.get("stems", [])]
     return job
 
 
@@ -304,12 +378,13 @@ def get_audio(job_id: str, filename: str):
 
 
 @app.get("/api/jobs/{job_id}/download.zip")
-def download_zip(job_id: str):
+def download_zip(job_id: str, request: Request = None, lang: str | None = None):
     with jobs_lock:
         job = jobs.get(job_id)
         job = dict(job) if job else None
     if job is None or job.get("status") != "done" or "stem_specs" not in job:
         raise HTTPException(404)
+    locale = request_locale(request, lang)
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     zip_path = os.path.join(job_dir, "stems.zip")
     if not os.path.isfile(zip_path):
@@ -321,7 +396,7 @@ def download_zip(job_id: str):
             for spec in job["stem_specs"]:
                 src = os.path.join(job_dir, f"{spec['name']}.wav")
                 if os.path.isfile(src):
-                    zf.write(src, f"{base}_{spec['label']}.wav")
+                    zf.write(src, f"{base}_{localize_stem(spec, locale)['label']}.wav")
             # モデル・区間・モノラル等の条件を素材と一緒に残す。
             manifest = {k: job.get(k) for k in ("filename", "mode", "model_id", "model_label",
                         "quality", "duration", "elapsed", "is_preview", "preview_start",
@@ -342,28 +417,27 @@ def process_subsep_job(job_id: str, wav_path: str, kind: str):
             audio = np.repeat(audio, 2, axis=1)
 
         def cb(pct, msg):
-            set_job(job_id, progress=pct, message=msg)
+            set_job_message(job_id, msg, progress=pct)
 
         stems = engine.subseparate(audio.T, kind, progress_cb=cb)
 
-        set_job(job_id, progress=100, message="ファイルを書き出し中...")
+        set_job_message(job_id, Status("status.writing_files", "ファイルを書き出し中..."), progress=100)
         out = []
         for spec in SUBSEP_SPECS[kind]:
             data = np.clip(stems[spec["name"]].T, -1.0, 1.0)
             sf.write(os.path.join(job_dir, f"{spec['name']}.wav"), data, sr, subtype="PCM_16")
             out.append({**spec, "url": f"/api/jobs/{job_id}/audio/{spec['name']}.wav"})
-        set_job(job_id, status="done", message="完了", stems=out)
+        set_job_message(job_id, Status("status.done", "完了"), status="done", stems=out)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        set_job(job_id, status="error", message=str(e))
+        set_job_error(job_id, e)
 
 
 @app.post("/api/subseparate")
-async def subseparate_api(file: UploadFile = File(...), kind: str = Form(...)):
+async def subseparate_api(request: Request = None, file: UploadFile = File(...), kind: str = Form(...)):
     if kind not in SUBSEP_SPECS:
         raise HTTPException(400, "invalid kind")
-    require_downloaded_models("drumsep" if kind == "drums" else "karaoke")
+    require_downloaded_models("drumsep" if kind == "drums" else "karaoke",
+                              locale=request_locale(request))
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -377,6 +451,8 @@ async def subseparate_api(file: UploadFile = File(...), kind: str = Form(...)):
             "status": "processing",
             "progress": 0,
             "message": "準備中...",
+            "status_key": "status.preparing",
+            "status_params": None,
             "created": time.time(),
         }
     threading.Thread(target=process_subsep_job, args=(job_id, wav_path, kind), daemon=True).start()
@@ -390,19 +466,19 @@ def process_speaker_stems_job(job_id: str, wav_path: str):
     """音の内容を分離せず、話者の活動区間で元音声を分配する。"""
     try:
         from diarization_stems import iter_diarization_stems, summarize_diarization_activity
-        set_job(job_id, status="processing", progress=0, message="音声を読み込み中...")
+        set_job_message(job_id, Status("status.loading_audio", "音声を読み込み中..."), status="processing", progress=0)
         audio, sr = sf.read(wav_path, dtype="float32", always_2d=True)
         if audio.shape[1] not in (1, 2) or len(audio) < sr // 10 or not np.isfinite(audio).all():
-            raise ValueError("0.1秒以上の正常なモノラルまたはステレオ音声が必要です")
+            raise LocalizedValueError("error.audio_too_short_01", "0.1秒以上の正常なモノラルまたはステレオ音声が必要です")
 
         def cb(pct, message):
-            set_job(job_id, progress=min(80, max(0, int(pct * .8))), message=message)
+            set_job_message(job_id, message, progress=min(80, max(0, int(pct * .8))))
 
         turns = nemotron_diarizer.diarize(audio, sr, progress_cb=cb)
         if not turns:
-            raise RuntimeError("話者を検出できませんでした。話し声のあるトラックを選んでください")
+            raise LocalizedRuntimeError("error.no_speakers_found", "話者を検出できませんでした。話し声のあるトラックを選んでください")
         activity = summarize_diarization_activity(len(audio), sr, turns)
-        set_job(job_id, progress=82, message="話者と重なりのステムを作成中...")
+        set_job_message(job_id, Status("status.speaker_stems_building", "話者と重なりのステムを作成中..."), progress=82)
         separated = iter_diarization_stems(audio, sr, turns)
         job_dir = os.path.join(OUTPUT_DIR, job_id)
         result = []
@@ -415,29 +491,31 @@ def process_speaker_stems_job(job_id: str, wav_path: str):
             elif name == "residual":
                 label, color = "未検出・その他", "#94a3b8"
             else:
-                raise RuntimeError("話者ステム名が不正です")
+                raise LocalizedRuntimeError("error.speaker_stem_bad_name", "話者ステム名が不正です")
             data = np.asarray(data, dtype=np.float32)
             if data.shape != audio.shape or not np.isfinite(data).all():
-                raise RuntimeError("話者ステムの形式が不正です")
+                raise LocalizedRuntimeError("error.speaker_stem_bad_shape", "話者ステムの形式が不正です")
             sf.write(os.path.join(job_dir, name + ".wav"), data, sr, subtype="FLOAT")
             result.append({"name": name, "label": label, "color": color,
                            "url": f"/api/jobs/{job_id}/audio/{name}.wav"})
             del data
         warnings = []
+        warning_keys = []
         if activity["overlap_samples"] == 0:
             warnings.append("複数話者の重なりは検出されませんでした。検出漏れの可能性もあるため確認してください。")
-        set_job(job_id, status="done", progress=100, message="完了", stems=result, warnings=warnings)
+            warning_keys.append("warning.no_overlap")
+        set_job_message(job_id, Status("status.done", "完了"), status="done", progress=100,
+                        stems=result, warnings=warnings, warning_keys=warning_keys)
     except Exception as exc:
-        import traceback
-        traceback.print_exc()
-        set_job(job_id, status="error", message=str(exc))
+        set_job_error(job_id, exc)
 
 
 @app.post("/api/speaker-stems")
-def speaker_stems_api(file: UploadFile = File(...)):
-    require_downloaded_models("nemotron_diarization")
+def speaker_stems_api(request: Request = None, file: UploadFile = File(...)):
+    locale = request_locale(request)
+    require_downloaded_models("nemotron_diarization", locale=locale)
     if not file.filename:
-        raise HTTPException(400, "話し声のトラックを選択してください")
+        raise LocalizedHTTPException(400, "error.speech_track_required", "話し声のトラックを選択してください")
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -446,7 +524,8 @@ def speaker_stems_api(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, output)
     with jobs_lock:
         jobs[job_id] = {"id": job_id, "kind": "speaker_stems", "status": "queued",
-                        "progress": 0, "message": "準備中...", "created": time.time()}
+                        "progress": 0, "message": "準備中...", "status_key": "status.preparing",
+                        "status_params": None, "created": time.time()}
     threading.Thread(target=process_speaker_stems_job, args=(job_id, wav_path), daemon=True).start()
     return {"id": job_id}
 
@@ -457,7 +536,7 @@ def process_dialogue_job(job_id: str, wav_path: str, opts: dict):
         audio, sr = sf.read(wav_path, dtype="float32", always_2d=True)
 
         def cb(pct, msg):
-            set_job(job_id, progress=pct, message=msg)
+            set_job_message(job_id, msg, progress=pct)
 
         if opts["action"] == "analyze":
             # 文字起こし + 長さ調整 → セグメント一覧を返す (ファイルは作らない)
@@ -470,7 +549,9 @@ def process_dialogue_job(job_id: str, wav_path: str, opts: dict):
             if opts["auto_adjust"] and words:
                 segments = segment_words(words, min_len=opts["min_len"], max_len=opts["max_len"])
             if not segments:
-                raise RuntimeError("セリフを検出できませんでした (対象トラックに音声が含まれているか確認してください)")
+                raise LocalizedRuntimeError(
+                    "error.no_dialogue",
+                    "セリフを検出できませんでした (対象トラックに音声が含まれているか確認してください)")
             if opts["diarize"]:
                 if opts["diarization_model"] == "nemotron":
                     segments = nemotron_diarizer.assign(audio, sr, segments, progress_cb=cb)
@@ -482,14 +563,14 @@ def process_dialogue_job(job_id: str, wav_path: str, opts: dict):
                  "speaker": s.get("speaker", ""), "text": s["text"]}
                 for i, s in enumerate(segments, start=1)
             ]
-            set_job(job_id, status="done", progress=100, message="完了",
-                    segments=annotated, language=lang)
+            set_job_message(job_id, Status("status.done", "完了"), status="done", progress=100,
+                            segments=annotated, language=lang)
         else:
             # 確認・調整済みのセグメントでファイル書き出し
             segments = opts["segments"]
             if not segments:
-                raise RuntimeError("書き出すセリフがありません")
-            set_job(job_id, progress=50, message="クリップ・字幕・メタデータを書き出し中...")
+                raise LocalizedRuntimeError("error.no_dialogue_to_export", "書き出すセリフがありません")
+            set_job_message(job_id, Status("status.writing_dialogue", "クリップ・字幕・メタデータを書き出し中..."), progress=50)
             out_dir = os.path.join(job_dir, "dialogue")
             _, annotations = export_dialogue(
                 audio, sr, segments, out_dir,
@@ -499,17 +580,16 @@ def process_dialogue_job(job_id: str, wav_path: str, opts: dict):
                 make_tts=opts["make_tts"],
                 mono_clips=opts["mono_clips"],
             )
-            set_job(job_id, status="done", progress=100, message="完了",
-                    segments=annotations,
-                    zip_url=f"/api/jobs/{job_id}/dialogue.zip")
+            set_job_message(job_id, Status("status.done", "完了"), status="done", progress=100,
+                            segments=annotations,
+                            zip_url=f"/api/jobs/{job_id}/dialogue.zip")
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        set_job(job_id, status="error", message=str(e))
+        set_job_error(job_id, e)
 
 
 @app.post("/api/dialogue-export")
 async def dialogue_export_api(
+    request: Request = None,
     file: UploadFile = File(...),
     action: str = Form("analyze"),
     model_size: str = Form("medium"),
@@ -528,14 +608,14 @@ async def dialogue_export_api(
     segments: str = Form(""),
 ):
     if diarization_model not in ("resemblyzer", "nemotron"):
-        raise HTTPException(400, "話者分離モデルが正しくありません")
+        raise LocalizedHTTPException(400, "error.invalid_diarization_model", "話者分離モデルが正しくありません")
     if action == "analyze":
         if model_size not in ("small", "medium", "large"):
-            raise HTTPException(400, "音声認識モデルが正しくありません")
+            raise LocalizedHTTPException(400, "error.invalid_whisper_model", "音声認識モデルが正しくありません")
         needed = ["whisper_" + model_size]
         if diarize:
             needed.append("nemotron_diarization" if diarization_model == "nemotron" else "resemblyzer")
-        require_downloaded_models(*needed)
+        require_downloaded_models(*needed, locale=request_locale(request))
     job_id = uuid.uuid4().hex[:12]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -553,6 +633,8 @@ async def dialogue_export_api(
             "status": "processing",
             "progress": 0,
             "message": "準備中...",
+            "status_key": "status.preparing",
+            "status_params": None,
             "created": time.time(),
         }
     parsed_segments = []
@@ -569,7 +651,7 @@ async def dialogue_export_api(
                         seg["speaker"] = "".join(c for c in spk if c not in '\\/:*?"<>|')[:20]
                     parsed_segments.append(seg)
         except (ValueError, KeyError, TypeError):
-            raise HTTPException(400, "セグメントデータが不正です")
+            raise LocalizedHTTPException(400, "error.invalid_segments", "セグメントデータが不正です")
 
     opts = {
         "action": action if action in ("analyze", "export") else "analyze",
@@ -642,7 +724,7 @@ def denoise(
     s = max(0, int(noise_start * sr))
     e = min(len(audio), int(noise_end * sr))
     if e - s < int(0.05 * sr):
-        raise HTTPException(400, "ノイズ区間が短すぎます (0.05秒以上選択してください)")
+        raise LocalizedHTTPException(400, "error.noise_range_short", "ノイズ区間が短すぎます (0.05秒以上選択してください)")
 
     noise = audio[s:e]
     strength = float(np.clip(strength, 0.1, 1.0))
@@ -668,6 +750,7 @@ def denoise(
 
 @app.post("/api/effect")
 def apply_effect(
+    request: Request = None,
     file: UploadFile = File(...),
     effect: str = Form(...),
     sensitivity: float = Form(0.5),
@@ -681,7 +764,7 @@ def apply_effect(
     from repair import declick, dehum
 
     if effect in ("dereverb", "nemotron_reuse"):
-        require_downloaded_models(effect)
+        require_downloaded_models(effect, locale=request_locale(request))
 
     raw = file.file.read()
     audio, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
@@ -706,6 +789,9 @@ def apply_effect(
             with engine._lock:
                 out = enhance(model_audio.T, sample_rate=model_rate).T
         except (ValueError, FileNotFoundError, RuntimeError) as exc:
+            key = getattr(exc, "i18n_key", None)
+            if key:
+                raise LocalizedHTTPException(400, key, str(exc), getattr(exc, "i18n_params", None)) from exc
             raise HTTPException(400, str(exc)) from exc
         out = resample_audio(out, model_rate, sr)[:len(audio)]
         if len(out) < len(audio):
@@ -737,7 +823,7 @@ def apply_effect(
         meter = pyloudnorm.Meter(sr)
         measured = float(meter.integrated_loudness(audio.astype(np.float64)))
         if not np.isfinite(measured) or measured < -70:
-            raise HTTPException(400, "音が小さすぎてラウドネスを測定できません")
+            raise LocalizedHTTPException(400, "error.loudness_too_quiet", "音が小さすぎてラウドネスを測定できません")
         gain_db = float(np.clip(target_lufs, -36.0, -5.0)) - measured
         gain = 10 ** (gain_db / 20)
         # クリップ防止: ピークが -1dBTP を超えないようゲインを制限

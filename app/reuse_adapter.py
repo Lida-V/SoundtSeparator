@@ -15,6 +15,8 @@ from safetensors.torch import load_file
 from reuse_runtime.generator_SEMamba_time_d4 import SEMamba
 from reuse_runtime.stfts import mag_phase_stft, mag_phase_istft
 
+from i18n import LocalizedFileNotFoundError, LocalizedRuntimeError, LocalizedValueError, Status
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_WEIGHTS = ROOT / "models" / "nemotron-reuse" / "model.safetensors"
 CONFIG = Path(__file__).resolve().parent / "reuse_runtime" / "config.json"
@@ -33,7 +35,9 @@ def downloaded(weights_path=DEFAULT_WEIGHTS):
 def load_model(weights_path=DEFAULT_WEIGHTS, device=None):
     path = Path(weights_path)
     if not downloaded(path):
-        raise FileNotFoundError("RE-USEのモデルがありません。モデル管理から明示的にダウンロードしてください。")
+        raise LocalizedFileNotFoundError(
+            "error.model_missing_nemotron_reuse",
+            "RE-USEのモデルがありません。モデル管理から明示的にダウンロードしてください。")
     config = json.loads(CONFIG.read_text(encoding="utf-8"))
     model = SEMamba(config)
     # safetensors はpickleを実行しない。ローカルファイルだけを読み込む。
@@ -76,13 +80,13 @@ def enhance(audio, sample_rate=44100, weights_path=DEFAULT_WEIGHTS, progress_cb=
     """(channels, samples) のfloat配列を受け、(1, samples) を返す。"""
     audio = np.asarray(audio, dtype=np.float32)
     if audio.ndim != 2 or audio.shape[0] not in (1, 2) or audio.shape[1] == 0:
-        raise ValueError("モノラルまたはステレオの音声が必要です")
+        raise LocalizedValueError("error.reuse_bad_input", "モノラルまたはステレオの音声が必要です")
     if not np.isfinite(audio).all():
-        raise ValueError("音声に無効な値が含まれています")
+        raise LocalizedValueError("error.reuse_non_finite", "音声に無効な値が含まれています")
     if not isinstance(sample_rate, int) or not 8000 <= sample_rate <= 48000:
-        raise ValueError("RE-USEは8〜48kHzの音声に対応しています")
+        raise LocalizedValueError("error.reuse_bad_rate", "RE-USEは8〜48kHzの音声に対応しています")
     if not 0 <= overlap < 1 or not 0.1 <= chunk_seconds <= 30:
-        raise ValueError("分割処理の設定が不正です")
+        raise LocalizedValueError("error.reuse_bad_chunks", "分割処理の設定が不正です")
     if model_bundle is None:
         model_bundle = load_model(weights_path)
     model, config, device = model_bundle
@@ -104,8 +108,8 @@ def enhance(audio, sample_rate=44100, weights_path=DEFAULT_WEIGHTS, progress_cb=
             result[:, start:end] += enhanced * window
             weights[:, start:end] += window
             if progress_cb:
-                progress_cb(int((i + 1) * 100 / len(starts)), "RE-USEで音声を補正中")
+                progress_cb(int((i + 1) * 100 / len(starts)), Status("status.reuse_enhancing", "RE-USEで音声を補正中"))
     result = (result / weights.clamp_min(1e-5)).cpu().numpy()
     if not np.isfinite(result).all():
-        raise RuntimeError("RE-USEの出力に無効な値が含まれています")
+        raise LocalizedRuntimeError("error.reuse_bad_output", "RE-USEの出力に無効な値が含まれています")
     return result.astype(np.float32, copy=False)

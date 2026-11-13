@@ -15,6 +15,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from i18n import LocalizedRuntimeError, LocalizedValueError, Status
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODELS_DIR = BASE_DIR / "models"
 REVISION = "22da7d4cd3ea63f9365181008bff1c0d2ab6fb2b"
@@ -53,13 +55,18 @@ def _checked_file(spec, progress_cb=None, allow_download=False):
         digest = hashlib.sha256(target.read_bytes()).hexdigest()
         if target.stat().st_size == spec["size"] and digest == spec["sha256"]:
             return target
-        raise RuntimeError(f"DBS モデルが破損しています。{target.name} を確認してください")
+        raise LocalizedRuntimeError(
+            "error.dbs_corrupt",
+            "DBS モデルが破損しています。{filename} を確認してください",
+            filename=target.name)
     if not allow_download:
-        raise RuntimeError("DBS-TIGER DnR が未取得です。『モデル管理』からダウンロードしてください")
+        raise LocalizedRuntimeError(
+            "error.model_missing_dbs",
+            "DBS-TIGER DnR が未取得です。『モデル管理』からダウンロードしてください")
     temporary = target.with_name(target.name + "." + uuid.uuid4().hex[:8] + ".partial")
     try:
         if progress_cb:
-            progress_cb(0, "DBS-TIGER モデルをダウンロード中... (0%)")
+            progress_cb(0, Status("status.downloading_dbs", "DBS-TIGER モデルをダウンロード中... ({pct}%)", pct=0))
         request = urllib.request.Request(spec["url"], headers={"User-Agent": "SoundSeparator/1.0"})
         received, last_report = 0, 0.0
         digest = hashlib.sha256()
@@ -74,10 +81,10 @@ def _checked_file(spec, progress_cb=None, allow_download=False):
                 now = time.monotonic()
                 if progress_cb and now - last_report >= 0.25:
                     percent = min(100, int(100 * received / spec["size"]))
-                    progress_cb(0, f"DBS-TIGER モデルをダウンロード中... ({percent}%)")
+                    progress_cb(0, Status("status.downloading_dbs", "DBS-TIGER モデルをダウンロード中... ({pct}%)", pct=percent))
                     last_report = now
         if received != spec["size"] or digest.hexdigest() != spec["sha256"]:
-            raise RuntimeError("DBS モデルのダウンロード検証に失敗しました。再試行してください")
+            raise LocalizedRuntimeError("error.dbs_download_failed", "DBS モデルのダウンロード検証に失敗しました。再試行してください")
         os.replace(temporary, target)
         return target
     finally:
@@ -89,11 +96,13 @@ def load_model(device="cpu", progress_cb=None):
     try:
         from safetensors.torch import load_file
     except ImportError as error:
-        raise RuntimeError("DBS の実行には safetensors が必要です。setup.bat で依存を更新してください") from error
+        raise LocalizedRuntimeError(
+            "error.dbs_needs_safetensors",
+            "DBS の実行には safetensors が必要です。setup.bat で依存を更新してください") from error
     config_path = _checked_file(MODEL_FILES["config"], progress_cb)
     weight_path = _checked_file(MODEL_FILES["weights"], progress_cb)
     if progress_cb:
-        progress_cb(0, "DBS-TIGER モデルを読み込み中...")
+        progress_cb(0, Status("status.loading_dbs", "DBS-TIGER モデルを読み込み中..."))
     engine_path = str(BASE_DIR / "engine")
     if engine_path not in sys.path:
         sys.path.insert(0, engine_path)
@@ -114,12 +123,12 @@ def separate(audio, quality="standard", device="cpu", progress_cb=None, model=No
     結果とoverlap-addの蓄積はCPU上で行う。品質は窓の重なり量を調整する。
     """
     if quality not in ("fast", "standard", "high"):
-        raise ValueError("品質は fast / standard / high を指定してください")
+        raise LocalizedValueError("error.dbs_invalid_quality", "品質は fast / standard / high を指定してください")
     audio = np.asarray(audio, dtype=np.float32)
     if audio.ndim != 2 or audio.shape[0] not in (1, 2) or audio.shape[1] == 0:
-        raise ValueError("DBS の入力は (1または2チャンネル, サンプル数) が必要です")
+        raise LocalizedValueError("error.dbs_input_shape", "DBS の入力は (1または2チャンネル, サンプル数) が必要です")
     if not np.isfinite(audio).all():
-        raise ValueError("音声に無効な値が含まれています")
+        raise LocalizedValueError("error.dbs_non_finite", "音声に無効な値が含まれています")
     if model is None:
         model = load_model(device=device, progress_cb=progress_cb)
     mono = audio.mean(axis=0, dtype=np.float32)
@@ -146,12 +155,12 @@ def separate(audio, quality="standard", device="cpu", progress_cb=None, model=No
             estimate = estimate[0]
         estimate = estimate[0, :, :valid].float().cpu().numpy()
         if estimate.shape != (3, valid) or not np.isfinite(estimate).all():
-            raise RuntimeError("DBS が正しい形の音声を返しませんでした")
+            raise LocalizedRuntimeError("error.dbs_bad_output", "DBS が正しい形の音声を返しませんでした")
         output[:, start:start + valid] += estimate
         weight[start:start + valid] += 1
         if progress_cb:
             percent = int(97 * (index + 1) / len(starts))
-            progress_cb(percent, f"分離処理中 (DBS-TIGER・モノラル)... ({percent}%)")
+            progress_cb(percent, Status("status.separating_dbs", "分離処理中 (DBS-TIGER・モノラル)... ({pct}%)", pct=percent))
         del piece, estimate
     output /= weight
     return {"dialog": output[2:3], "effect": output[1:2], "music": output[0:1]}
